@@ -53,13 +53,14 @@ export async function GET() {
   let directRequestingUserIdValue: string | null = null;
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (url && anonKey && session?.access_token) {
+  const publishableKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (url && publishableKey && session?.access_token) {
     try {
       const authRes = await fetch(`${url}/rest/v1/rpc/requesting_user_id`, {
         method: "POST",
         headers: {
-          apikey: anonKey,
+          apikey: publishableKey,
           Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
@@ -83,7 +84,7 @@ export async function GET() {
       const res = await fetch(`${url}/rest/v1/classes?select=id`, {
         method: "POST",
         headers: {
-          apikey: anonKey,
+          apikey: publishableKey,
           Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
           Prefer: "return=representation, missing=default",

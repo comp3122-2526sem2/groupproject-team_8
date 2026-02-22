@@ -8,7 +8,6 @@ import {
   ALLOWED_MIME_TYPES,
   MAX_MATERIAL_BYTES,
   detectMaterialKind,
-  extractTextFromBuffer,
   sanitizeFilename,
 } from "@/lib/materials/extract-text";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -182,17 +181,14 @@ export async function uploadMaterial(classId: string, formData: FormData) {
   const safeName = sanitizeFilename(file.name);
   const storagePath = `classes/${classId}/${materialId}/${safeName}`;
   const buffer = Buffer.from(await file.arrayBuffer());
-
-  const extraction = await extractTextFromBuffer(buffer, kind);
-  const extractedText = extraction.text || null;
-  const processingStatus = extraction.status === "failed" ? "failed" : "processing";
   const baseMetadata = {
     original_name: file.name,
     kind,
-    warnings: extraction.warnings,
-    extraction_stats: extraction.stats,
-    page_count: extraction.pageCount ?? null,
+    warnings: [] as string[],
+    extraction_stats: null,
+    page_count: null,
   };
+  const processingStatus = "processing";
 
   const { error: uploadError } = await supabase.storage
     .from(MATERIALS_BUCKET)
@@ -216,7 +212,7 @@ export async function uploadMaterial(classId: string, formData: FormData) {
       mime_type: file.type || null,
       size_bytes: file.size,
       status: processingStatus,
-      extracted_text: extractedText,
+      extracted_text: null,
       metadata: baseMetadata,
     })
     .select("id")
@@ -257,8 +253,7 @@ export async function uploadMaterial(classId: string, formData: FormData) {
     }
   }
 
-  const uploadNotice =
-    processingStatus === "failed" || jobFailed ? "uploaded=failed" : "uploaded=processing";
+  const uploadNotice = jobFailed ? "uploaded=failed" : "uploaded=processing";
 
   redirect(`/classes/${classId}?${uploadNotice}`);
 }

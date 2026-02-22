@@ -84,7 +84,8 @@ describe("runOcrOnPdf", () => {
 
     expect(pdfGetDocumentMock).toHaveBeenCalledWith({ data: buffer });
     expect(doc.getPage).toHaveBeenCalledTimes(2);
-    expect(createWorkerMock).toHaveBeenCalledTimes(2);
+    expect(createWorkerMock).toHaveBeenCalledTimes(1);
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
     expect(result.pageCount).toBe(2);
     expect(result.totalPages).toBe(3);
     expect(result.results).toHaveLength(2);

@@ -43,3 +43,5 @@ pnpm dev
 - Set `CRON_SECRET` to protect `POST /api/materials/process` (requires `x-cron-secret` header or Bearer token in `Authorization` header). If unset, restrict access at the infrastructure layer (e.g., IP allowlist).
 - Schedule `POST /api/materials/process` (for example with Vercel Cron) so queued material jobs are actually processed.
 - Tune `VISION_PAGE_CONCURRENCY` to control parallel Vision calls for low-quality PDF pages.
+- `web/vercel.json` includes a daily cron schedule for `/api/materials/process` (Hobby-plan safe). On Pro, change to `*/5 * * * *`.
+- For full staging + production rollout steps, see `../DEPLOYMENT.md`.

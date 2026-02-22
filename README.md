@@ -39,7 +39,7 @@ This repo is aligned to the roadmap in `ROADMAP.md`, with core services, bluepri
 
 - Node.js 20+
 - pnpm
-- Supabase project (URL, anon key, service role key)
+- Supabase project (URL, publishable key, secret key)
 
 **Setup**
 
@@ -85,5 +85,6 @@ pnpm dev
 
 - Architecture and flows: `DESIGN.md`.
 - Delivery milestones: `ROADMAP.md`.
+- Deployment runbook: `DEPLOYMENT.md`.
 - Supabase notes: `supabase/README.md`.
 - Web app details: `web/README.md`.

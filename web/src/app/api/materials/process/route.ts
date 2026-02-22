@@ -31,7 +31,7 @@ const SUPPORTED_MIME_TO_KIND: Record<string, MaterialKind> = {
   "image/gif": "image",
 };
 
-export async function POST(req: Request) {
+async function handleProcessRequest(req: Request) {
   const secret = process.env.CRON_SECRET;
   if (secret) {
     const provided = getCronSecretFromRequest(req);
@@ -104,6 +104,14 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({ processed, failures });
+}
+
+export async function GET(req: Request) {
+  return handleProcessRequest(req);
+}
+
+export async function POST(req: Request) {
+  return handleProcessRequest(req);
 }
 
 async function processMaterialJob(
