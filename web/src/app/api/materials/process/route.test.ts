@@ -143,7 +143,7 @@ vi.mock("@/lib/materials/ocr", () => ({
   isLowQualityText: (...args: unknown[]) => isLowQualityText(...args),
 }));
 
-describe("POST /api/materials/process", () => {
+describe("/api/materials/process", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     jobUpdates.length = 0;
@@ -201,6 +201,16 @@ describe("POST /api/materials/process", () => {
         "Processing failed: No embedding providers are configured.",
       ]),
     );
+  });
+
+  it("accepts GET requests so Vercel cron can trigger processing", async () => {
+    const { GET } = await import("@/app/api/materials/process/route");
+
+    const response = await GET(
+      new Request("http://localhost/api/materials/process", { method: "GET" }),
+    );
+
+    expect(response.status).toBe(200);
   });
 
   it("accepts bearer auth for cron secret", async () => {

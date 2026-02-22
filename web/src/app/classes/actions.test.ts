@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { generateJoinCode } from "@/lib/join-code";
 import {
   detectMaterialKind,
-  extractTextFromBuffer,
   sanitizeFilename,
 } from "@/lib/materials/extract-text";
 import { requireVerifiedUser } from "@/lib/auth/session";
@@ -28,7 +27,6 @@ vi.mock("@/lib/materials/extract-text", async () => {
   return {
     ...actual,
     detectMaterialKind: vi.fn(),
-    extractTextFromBuffer: vi.fn(),
     sanitizeFilename: vi.fn((name: string) => name),
   };
 });
@@ -267,13 +265,6 @@ describe("class actions", () => {
     formData.set("title", "Lecture 1");
 
     vi.mocked(detectMaterialKind).mockReturnValue("pdf");
-    vi.mocked(extractTextFromBuffer).mockResolvedValue({
-      text: "hello",
-      segments: [],
-      status: "ready",
-      warnings: [],
-      stats: { charCount: 5, segmentCount: 1 },
-    });
     vi.mocked(sanitizeFilename).mockReturnValue("lecture.pdf");
 
     supabaseFromMock.mockImplementation((table: string) => {

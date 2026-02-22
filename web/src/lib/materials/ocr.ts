@@ -18,11 +18,7 @@ const SHORT_TEXT_CONFIDENCE = Number(process.env.OCR_SHORT_TEXT_CONFIDENCE ?? 85
 export async function runOcrOnImage(buffer: Buffer) {
   const worker = await createWorker(DEFAULT_OCR_LANGUAGE);
   try {
-    const result = await worker.recognize(buffer);
-    return {
-      text: result.data.text ?? "",
-      confidence: result.data.confidence ?? 0,
-    } satisfies OcrResult;
+    return runOcrWithWorker(worker, buffer);
   } finally {
     await worker.terminate();
   }
@@ -34,20 +30,36 @@ export async function runOcrOnPdf(buffer: Buffer) {
   const totalPages = doc.numPages;
   const pageCount = Math.min(totalPages, MAX_PDF_OCR_PAGES);
   const results: OcrPageResult[] = [];
+  const worker = await createWorker(DEFAULT_OCR_LANGUAGE);
 
-  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
-    const page = await doc.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 1.5 });
-    const canvas = createCanvas(viewport.width, viewport.height);
-    const ctx = canvas.getContext("2d");
-    await page.render({ canvasContext: ctx as unknown as CanvasRenderingContext2D, viewport })
-      .promise;
-    const pngBuffer = canvas.toBuffer("image/png");
-    const result = await runOcrOnImage(pngBuffer);
-    results.push({ ...result, imageBuffer: pngBuffer });
+  try {
+    for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+      const page = await doc.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: 1.5 });
+      const canvas = createCanvas(viewport.width, viewport.height);
+      const ctx = canvas.getContext("2d");
+      await page.render({ canvasContext: ctx as unknown as CanvasRenderingContext2D, viewport })
+        .promise;
+      const pngBuffer = canvas.toBuffer("image/png");
+      const result = await runOcrWithWorker(worker, pngBuffer);
+      results.push({ ...result, imageBuffer: pngBuffer });
+    }
+  } finally {
+    await worker.terminate();
   }
 
   return { results, pageCount, totalPages };
+}
+
+async function runOcrWithWorker(
+  worker: Awaited<ReturnType<typeof createWorker>>,
+  buffer: Buffer,
+) {
+  const result = await worker.recognize(buffer);
+  return {
+    text: result.data.text ?? "",
+    confidence: result.data.confidence ?? 0,
+  } satisfies OcrResult;
 }
 
 export function isLowQualityText(text: string, confidence: number) {
