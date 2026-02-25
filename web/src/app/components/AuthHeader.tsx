@@ -30,6 +30,31 @@ function getNavClass(isActive: boolean) {
   return `${base} chip-neutral hover:border-accent hover:bg-accent-soft hover:text-accent`;
 }
 
+function renderBreadcrumbs(breadcrumbs: Breadcrumb[]) {
+  return (
+    <nav className="flex flex-wrap items-center gap-2 text-xs font-medium text-ui-muted">
+      {breadcrumbs.map((crumb, index) => {
+        const isLast = index === breadcrumbs.length - 1;
+        if (crumb.href && !isLast) {
+          return (
+            <span key={`${crumb.label}-${index}`} className="flex items-center gap-2">
+              <Link href={crumb.href} className="ui-motion-color hover:text-accent">
+                {crumb.label}
+              </Link>
+              <span className="text-ui-subtle">/</span>
+            </span>
+          );
+        }
+        return (
+          <span key={`${crumb.label}-${index}`} className="text-ui-subtle">
+            {crumb.label}
+          </span>
+        );
+      })}
+    </nav>
+  );
+}
+
 export default function AuthHeader({
   breadcrumbs,
   activeNav,
@@ -50,11 +75,65 @@ export default function AuthHeader({
       : resolvedAccountType === "student"
         ? "/student/dashboard"
         : "/dashboard";
+  const classesHref =
+    resolvedAccountType === "teacher"
+      ? "/teacher/classes"
+      : resolvedAccountType === "student"
+        ? "/student/classes"
+        : "/dashboard";
   const showTeacherNav = resolvedAccountType === "teacher" || classContext?.isTeacher;
+  const normalizedClassBreadcrumbs =
+    breadcrumbs && breadcrumbs.length > 0
+      ? breadcrumbs.map((crumb, index) => {
+          if (index === 0 && (crumb.label === "Dashboard" || crumb.href === "/dashboard")) {
+            return { ...crumb, label: "My Classes", href: classesHref };
+          }
+          if (crumb.href === "/dashboard") {
+            return { ...crumb, href: classesHref };
+          }
+          return crumb;
+        })
+      : [{ label: "My Classes", href: classesHref }];
   const shellClass =
     tone === "subtle"
       ? "sticky top-0 z-40 border-b border-default bg-[var(--surface-muted)]/95 backdrop-blur"
       : "sticky top-0 z-40 border-b border-default bg-white/95 backdrop-blur";
+
+  if (classContext) {
+    return (
+      <div className="mb-6 rounded-2xl border border-default bg-white px-4 py-3 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {renderBreadcrumbs(normalizedClassBreadcrumbs)}
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={classesHref}
+              className="ui-motion-color rounded-full border border-default bg-white px-4 py-2 text-xs font-semibold text-ui-muted hover:border-accent hover:text-accent"
+            >
+              My Classes
+            </Link>
+            <Link
+              href={
+                classContext.isTeacher
+                  ? `/classes/${classContext.classId}#teacher-chat-monitor`
+                  : `/classes/${classContext.classId}?view=chat`
+              }
+              className="ui-motion-color rounded-full border border-default bg-white px-4 py-2 text-xs font-semibold text-ui-muted hover:border-accent hover:text-accent"
+            >
+              {classContext.isTeacher ? "Chat Monitor" : "Open AI Chat"}
+            </Link>
+            {classContext.isTeacher ? (
+              <Link
+                href={`/classes/${classContext.classId}/activities/chat/new`}
+                className="ui-motion-color chip-warm rounded-full px-4 py-2 text-xs font-semibold hover:bg-accent-soft"
+              >
+                New Chat Assignment
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={shellClass}>
@@ -93,28 +172,6 @@ export default function AuthHeader({
               Join Class
             </Link>
           )}
-          {classContext ? (
-            <>
-              <Link
-                href={
-                  classContext.isTeacher
-                    ? `/classes/${classContext.classId}#teacher-chat-monitor`
-                    : `/classes/${classContext.classId}?view=chat`
-                }
-                className="ui-motion-color rounded-full border border-default bg-white px-4 py-2 text-xs font-semibold text-ui-muted hover:border-accent hover:text-accent"
-              >
-                {classContext.isTeacher ? "Chat Monitor" : "Open AI Chat"}
-              </Link>
-              {classContext.isTeacher ? (
-                <Link
-                  href={`/classes/${classContext.classId}/activities/chat/new`}
-                  className="ui-motion-color chip-warm rounded-full px-4 py-2 text-xs font-semibold hover:bg-accent-soft"
-                >
-                  New Chat Assignment
-                </Link>
-              ) : null}
-            </>
-          ) : null}
           <form action={signOut}>
             <button
               type="submit"
@@ -127,26 +184,7 @@ export default function AuthHeader({
       </div>
       {breadcrumbs && breadcrumbs.length > 0 ? (
         <div className="mx-auto w-full max-w-6xl px-6 pb-5">
-          <nav className="flex flex-wrap items-center gap-2 text-xs font-medium text-ui-muted">
-            {breadcrumbs.map((crumb, index) => {
-              const isLast = index === breadcrumbs.length - 1;
-              if (crumb.href && !isLast) {
-                return (
-                  <span key={`${crumb.label}-${index}`} className="flex items-center gap-2">
-                    <Link href={crumb.href} className="ui-motion-color hover:text-accent">
-                      {crumb.label}
-                    </Link>
-                    <span className="text-ui-subtle">/</span>
-                  </span>
-                );
-              }
-              return (
-                <span key={`${crumb.label}-${index}`} className="text-ui-subtle">
-                  {crumb.label}
-                </span>
-              );
-            })}
-          </nav>
+          {renderBreadcrumbs(breadcrumbs)}
         </div>
       ) : null}
     </div>

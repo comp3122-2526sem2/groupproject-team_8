@@ -34,6 +34,15 @@ Student Flow
 - Request scaffolded homework help.
 - View exam review plan and submit reflections.
 
+**Navigation Information Architecture**
+
+- Dashboard and My Classes are separate destinations for both roles:
+  - Teacher: `/teacher/dashboard` and `/teacher/classes`
+  - Student: `/student/dashboard` and `/student/classes`
+- Sidebar active state is route based (pathname), not URL hash based.
+- Class experiences under `/classes/[classId]/**` use the same sidebar shell to avoid switching to a different top-banner navigation pattern mid-flow.
+- Legacy `#classes` dashboard anchors are treated as compatibility redirects to the dedicated My Classes routes.
+
 **AI Chat (Always-On + Assignments)**
 
 - Always-On Class Chat:
