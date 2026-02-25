@@ -1,4 +1,5 @@
 import Link from "next/link";
+import DashboardHashRedirect from "@/app/components/DashboardHashRedirect";
 import Sidebar from "@/app/components/Sidebar";
 import { requireVerifiedUser } from "@/lib/auth/session";
 import { startServerTimer } from "@/lib/perf";
@@ -163,9 +164,6 @@ export default async function StudentDashboardPage() {
 
   const { current, upcoming, completed } = categorizeAssignments(allAssignments);
 
-  const enrollmentMap = new Map(
-    enrollments?.map((enrollment) => [enrollment.class_id, enrollment.role]) ?? [],
-  );
   const displayName = profile.display_name?.trim() || user.email || "Student";
   timer.end({ classes: classes?.length ?? 0, assignments: allAssignments.length });
 
@@ -177,6 +175,7 @@ export default async function StudentDashboardPage() {
         userDisplayName={profile.display_name}
       />
       <div className="sidebar-content">
+        <DashboardHashRedirect classesHref="/student/classes" />
         <main className="mx-auto max-w-5xl p-6 pt-16">
           <header className="flex flex-wrap items-center justify-between gap-6">
             <div>
@@ -308,50 +307,25 @@ export default async function StudentDashboardPage() {
             </section>
           )}
 
-          <section id="classes" className="mt-8">
-            <h2 className="text-lg font-semibold text-ui-primary">Your Classes</h2>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              {classes && classes.length > 0 ? (
-                classes.map((classItem) => {
-                  const role = enrollmentMap.get(classItem.id);
-                  if (role !== "student") {
-                    return null;
-                  }
-
-                  return (
-                    <div
-                      key={classItem.id}
-                      className="ui-motion-lift group rounded-2xl border border-default bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:border-accent hover:shadow-md"
-                    >
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">Student</p>
-                      <Link href={`/classes/${classItem.id}`} className="mt-2 block">
-                        <h3 className="text-xl font-semibold text-ui-primary">{classItem.title}</h3>
-                      </Link>
-                      <p className="mt-2 text-sm text-ui-muted">
-                        {classItem.subject || "General"} · {classItem.level || "Mixed"}
-                      </p>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <Link
-                          href={`/classes/${classItem.id}`}
-                          className="ui-motion-color rounded-full border border-default bg-white px-3 py-1 text-xs font-medium text-ui-muted hover:border-accent hover:bg-accent-soft hover:text-accent"
-                        >
-                          Open class
-                        </Link>
-                        <Link
-                          href={`/classes/${classItem.id}?view=chat`}
-                          className="ui-motion-color rounded-full border border-default bg-white px-3 py-1 text-xs font-medium text-ui-muted hover:border-accent hover:bg-accent-soft hover:text-accent"
-                        >
-                          Open AI chat
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="rounded-2xl border border-dashed border-default bg-[var(--surface-muted)] p-6 text-sm text-ui-muted">
-                  No classes joined yet. Use a join code from your teacher.
-                </div>
-              )}
+          <section className="mt-8 rounded-2xl border border-default bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-ui-primary">My Classes</h2>
+                <p className="mt-1 text-sm text-ui-muted">
+                  See all your joined classes and open each class workspace from one dedicated view.
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="rounded-full border border-default bg-[var(--surface-muted)] px-3 py-1 text-sm font-semibold text-ui-primary">
+                  {classes?.length ?? 0} joined
+                </span>
+                <Link
+                  href="/student/classes"
+                  className="ui-motion-color rounded-xl border border-accent bg-accent-soft px-4 py-2 text-sm font-semibold text-accent hover:bg-accent-soft"
+                >
+                  Open My Classes
+                </Link>
+              </div>
             </div>
           </section>
         </main>

@@ -12,6 +12,7 @@ type NavItem = {
   label: string;
   href: string;
   icon: ReactNode;
+  match?: (pathname: string) => boolean;
 };
 
 const teacherNavItems: NavItem[] = [
@@ -30,7 +31,7 @@ const teacherNavItems: NavItem[] = [
   },
   {
     label: "My Classes",
-    href: "/teacher/dashboard#classes",
+    href: "/teacher/classes",
     icon: (
       <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
         <path
@@ -40,6 +41,8 @@ const teacherNavItems: NavItem[] = [
         />
       </svg>
     ),
+    match: (pathname) =>
+      pathname === "/teacher/classes" || pathname === "/classes/new" || pathname.startsWith("/classes/"),
   },
   {
     label: "Settings",
@@ -78,8 +81,9 @@ const studentNavItems: NavItem[] = [
   },
   {
     label: "My Classes",
-    href: "/student/dashboard#classes",
+    href: "/student/classes",
     icon: teacherNavItems[1].icon,
+    match: (pathname) => pathname === "/student/classes" || pathname.startsWith("/classes/"),
   },
   {
     label: "Settings",
@@ -127,12 +131,6 @@ function SidebarToggleIcon({ collapsed }: { collapsed: boolean }) {
 
 export default function Sidebar({ accountType, userEmail, userDisplayName, classId }: SidebarProps) {
   const pathname = usePathname();
-  const [currentHash, setCurrentHash] = useState<string>(() => {
-    if (typeof window === "undefined") {
-      return "";
-    }
-    return window.location.hash;
-  });
   const [isMobileViewport, setIsMobileViewport] = useState<boolean>(() => {
     if (typeof window === "undefined") {
       return false;
@@ -158,15 +156,6 @@ export default function Sidebar({ accountType, userEmail, userDisplayName, class
   }, []);
 
   useEffect(() => {
-    const syncHash = () => setCurrentHash(window.location.hash);
-    syncHash();
-    window.addEventListener("hashchange", syncHash);
-    return () => {
-      window.removeEventListener("hashchange", syncHash);
-    };
-  }, [pathname]);
-
-  useEffect(() => {
     window.localStorage.setItem(COLLAPSED_KEY, isCollapsed ? "true" : "false");
     const root = document.documentElement;
     root.style.setProperty("--sidebar-width", isCompact ? "5rem" : "16rem");
@@ -177,15 +166,11 @@ export default function Sidebar({ accountType, userEmail, userDisplayName, class
 
   const navItems = accountType === "teacher" ? teacherNavItems : studentNavItems;
 
-  const isActive = (href: string) => {
-    const [baseHref, hashTarget] = href.split("#");
-    if (hashTarget) {
-      return pathname === baseHref && currentHash === `#${hashTarget}`;
+  const isActive = (item: NavItem) => {
+    if (item.match) {
+      return item.match(pathname);
     }
-    if (baseHref === "/teacher/dashboard" || baseHref === "/student/dashboard") {
-      return pathname === baseHref && currentHash !== "#classes";
-    }
-    return pathname.startsWith(baseHref);
+    return pathname === item.href || pathname.startsWith(`${item.href}/`);
   };
 
   return (
@@ -231,7 +216,7 @@ export default function Sidebar({ accountType, userEmail, userDisplayName, class
             className={`ui-motion-color flex items-center text-sm font-medium ${
               isCompact ? "h-10 w-10 justify-center rounded-xl border" : "gap-3 rounded-lg px-3 py-2.5"
             } ${
-              isActive(item.href)
+              isActive(item)
                 ? "border border-accent bg-accent-soft text-accent"
                 : isCompact
                   ? "border-transparent text-ui-muted hover:bg-[var(--surface-muted)] hover:text-ui-primary"
@@ -260,7 +245,7 @@ export default function Sidebar({ accountType, userEmail, userDisplayName, class
                 d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
               />
             </svg>
-            <span className="truncate">View Class</span>
+            <span className="truncate">Back to class home</span>
           </Link>
         </div>
       )}

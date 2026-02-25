@@ -1,4 +1,5 @@
 import Link from "next/link";
+import DashboardHashRedirect from "@/app/components/DashboardHashRedirect";
 import Sidebar from "@/app/components/Sidebar";
 import { requireVerifiedUser } from "@/lib/auth/session";
 import { startServerTimer } from "@/lib/perf";
@@ -52,6 +53,11 @@ export default async function TeacherDashboardPage() {
   const enrollmentMap = new Map(
     teachingEnrollments.map((enrollment) => [enrollment.class_id, enrollment.role]),
   );
+  const ownedClassCount = ownedClasses.length;
+  const assistantClassCount = classes.filter((classItem) => classItem.owner_id !== user.id).length;
+  const recentClasses = classes
+    .filter((classItem) => enrollmentMap.get(classItem.id))
+    .slice(0, 3);
   const displayName = profile.display_name?.trim() || user.email || "Teacher";
 
   timer.end({ classes: classes.length });
@@ -64,6 +70,7 @@ export default async function TeacherDashboardPage() {
         userDisplayName={profile.display_name}
       />
       <div className="sidebar-content">
+        <DashboardHashRedirect classesHref="/teacher/classes" />
         <main className="mx-auto max-w-5xl p-6 pt-16">
           <header className="flex flex-wrap items-center justify-between gap-6">
             <div>
@@ -83,67 +90,50 @@ export default async function TeacherDashboardPage() {
             </Link>
           </header>
 
-          <section id="classes" className="mt-8">
-            <h2 className="text-lg font-semibold text-ui-primary">Your teaching classes</h2>
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              {classes.length > 0 ? (
-                classes.map((classItem) => {
-                  const enrollmentRole = enrollmentMap.get(classItem.id);
-                  const role =
-                    classItem.owner_id === user.id
-                      ? "Teacher"
-                      : enrollmentRole === "teacher"
-                        ? "Teacher"
-                        : enrollmentRole === "ta"
-                          ? "TA"
-                          : null;
-                  if (!role) {
-                    return null;
-                  }
+          <section className="mt-8 grid gap-4 sm:grid-cols-3">
+            <article className="rounded-2xl border border-default bg-white p-5 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">Total classes</p>
+              <p className="mt-3 text-3xl font-semibold text-ui-primary">{classes.length}</p>
+              <p className="mt-2 text-sm text-ui-muted">Across all classes where you teach.</p>
+            </article>
+            <article className="rounded-2xl border border-default bg-white p-5 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">Owner classes</p>
+              <p className="mt-3 text-3xl font-semibold text-ui-primary">{ownedClassCount}</p>
+              <p className="mt-2 text-sm text-ui-muted">Classes you created and manage.</p>
+            </article>
+            <article className="rounded-2xl border border-default bg-white p-5 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">Assistant roles</p>
+              <p className="mt-3 text-3xl font-semibold text-ui-primary">{assistantClassCount}</p>
+              <p className="mt-2 text-sm text-ui-muted">Classes where you support as teacher or TA.</p>
+            </article>
+          </section>
 
-                  return (
-                    <div
-                      key={classItem.id}
-                      className="ui-motion-lift group rounded-2xl border border-default bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:border-accent hover:shadow-md"
-                    >
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">{role}</p>
-                      <Link href={`/classes/${classItem.id}`} className="mt-2 block">
-                        <h3 className="text-xl font-semibold text-ui-primary">{classItem.title}</h3>
-                      </Link>
-                      <p className="mt-2 text-sm text-ui-muted">
-                        {classItem.subject || "General"} · {classItem.level || "Mixed"}
-                      </p>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <Link
-                          href={`/classes/${classItem.id}`}
-                          className="ui-motion-color rounded-full border border-default bg-white px-3 py-1 text-xs font-medium text-ui-muted hover:border-accent hover:bg-accent-soft hover:text-accent"
-                        >
-                          Open class
-                        </Link>
-                        <Link
-                          href={`/classes/${classItem.id}#teacher-chat-monitor`}
-                          className="ui-motion-color rounded-full border border-default bg-white px-3 py-1 text-xs font-medium text-ui-muted hover:border-accent hover:bg-accent-soft hover:text-accent"
-                        >
-                          Chat monitor
-                        </Link>
-                        <Link
-                          href={`/classes/${classItem.id}/activities/chat/new`}
-                          className="ui-motion-color rounded-full border border-accent bg-accent-soft px-3 py-1 text-xs font-semibold text-accent hover:bg-accent-soft"
-                        >
-                          New chat
-                        </Link>
-                        <Link
-                          href={`/classes/${classItem.id}/activities/quiz/new`}
-                          className="ui-motion-color rounded-full border border-accent bg-accent-soft px-3 py-1 text-xs font-semibold text-accent hover:bg-accent-soft"
-                        >
-                          New quiz
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })
+          <section className="mt-8">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-ui-primary">Recent classes</h2>
+              <Link href="/teacher/classes" className="text-sm font-semibold text-accent hover:text-accent-strong">
+                View all
+              </Link>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              {recentClasses.length > 0 ? (
+                recentClasses.map((classItem) => (
+                  <Link
+                    key={classItem.id}
+                    href={`/classes/${classItem.id}`}
+                    className="ui-motion-lift block rounded-2xl border border-default bg-white p-5 shadow-sm hover:-translate-y-0.5 hover:border-accent hover:shadow-md"
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">
+                      {classItem.owner_id === user.id ? "Teacher" : "TA"}
+                    </p>
+                    <h3 className="mt-2 text-lg font-semibold text-ui-primary">{classItem.title}</h3>
+                    <p className="mt-2 text-sm text-ui-muted">
+                      {classItem.subject || "General"} · {classItem.level || "Mixed"}
+                    </p>
+                  </Link>
+                ))
               ) : (
-                <div className="rounded-2xl border border-dashed border-default bg-[var(--surface-muted)] p-6 text-sm text-ui-muted">
+                <div className="rounded-2xl border border-dashed border-default bg-[var(--surface-muted)] p-6 text-sm text-ui-muted md:col-span-3">
                   No classes yet. Create one to get started.
                 </div>
               )}
