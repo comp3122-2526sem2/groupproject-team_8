@@ -30,12 +30,12 @@ function getNavClass(isActive: boolean) {
   return `${base} chip-neutral hover:border-accent hover:bg-accent-soft hover:text-accent`;
 }
 
-function renderBreadcrumbs(breadcrumbs: Breadcrumb[]) {
+function renderBreadcrumbs(breadcrumbs: Breadcrumb[], clickable = true) {
   return (
     <nav className="flex flex-wrap items-center gap-2 text-xs font-medium text-ui-muted">
       {breadcrumbs.map((crumb, index) => {
         const isLast = index === breadcrumbs.length - 1;
-        if (crumb.href && !isLast) {
+        if (clickable && crumb.href && !isLast) {
           return (
             <span key={`${crumb.label}-${index}`} className="flex items-center gap-2">
               <Link href={crumb.href} className="ui-motion-color hover:text-accent">
@@ -82,18 +82,10 @@ export default function AuthHeader({
         ? "/student/classes"
         : "/dashboard";
   const showTeacherNav = resolvedAccountType === "teacher" || classContext?.isTeacher;
-  const normalizedClassBreadcrumbs =
+  const classTitle =
     breadcrumbs && breadcrumbs.length > 0
-      ? breadcrumbs.map((crumb, index) => {
-          if (index === 0 && (crumb.label === "Dashboard" || crumb.href === "/dashboard")) {
-            return { ...crumb, label: "My Classes", href: classesHref };
-          }
-          if (crumb.href === "/dashboard") {
-            return { ...crumb, href: classesHref };
-          }
-          return crumb;
-        })
-      : [{ label: "My Classes", href: classesHref }];
+      ? breadcrumbs[breadcrumbs.length - 1]?.label ?? "Class"
+      : "Class";
   const shellClass =
     tone === "subtle"
       ? "sticky top-0 z-40 border-b border-default bg-[var(--surface-muted)]/95 backdrop-blur"
@@ -101,9 +93,9 @@ export default function AuthHeader({
 
   if (classContext) {
     return (
-      <div className="mb-6 rounded-2xl border border-default bg-white px-4 py-3 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {renderBreadcrumbs(normalizedClassBreadcrumbs)}
+      <div className="sticky top-0 z-40 border-b border-default bg-white/90 backdrop-blur">
+        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-6">
+          <h1 className="editorial-title truncate text-2xl text-ui-primary">{classTitle}</h1>
           <div className="flex flex-wrap items-center gap-2">
             <Link
               href={classesHref}
@@ -111,24 +103,29 @@ export default function AuthHeader({
             >
               My Classes
             </Link>
-            <Link
-              href={
-                classContext.isTeacher
-                  ? `/classes/${classContext.classId}#teacher-chat-monitor`
-                  : `/classes/${classContext.classId}?view=chat`
-              }
-              className="ui-motion-color rounded-full border border-default bg-white px-4 py-2 text-xs font-semibold text-ui-muted hover:border-accent hover:text-accent"
-            >
-              {classContext.isTeacher ? "Chat Monitor" : "Open AI Chat"}
-            </Link>
             {classContext.isTeacher ? (
+              <>
+                <Link
+                  href={`/classes/${classContext.classId}#teacher-chat-monitor`}
+                  className="ui-motion-color rounded-full border border-default bg-white px-4 py-2 text-xs font-semibold text-ui-muted hover:border-accent hover:text-accent"
+                >
+                  Chat Monitor
+                </Link>
+                <Link
+                  href={`/classes/${classContext.classId}/activities/quiz/new`}
+                  className="ui-motion-color chip-warm rounded-full px-4 py-2 text-xs font-semibold hover:bg-accent-soft"
+                >
+                  New Quiz
+                </Link>
+              </>
+            ) : (
               <Link
-                href={`/classes/${classContext.classId}/activities/chat/new`}
-                className="ui-motion-color chip-warm rounded-full px-4 py-2 text-xs font-semibold hover:bg-accent-soft"
+                href={`/classes/${classContext.classId}?view=chat`}
+                className="ui-motion-color rounded-full border border-default bg-white px-4 py-2 text-xs font-semibold text-ui-muted hover:border-accent hover:text-accent"
               >
-                New Chat Assignment
+                Open AI Chat
               </Link>
-            ) : null}
+            )}
           </div>
         </div>
       </div>

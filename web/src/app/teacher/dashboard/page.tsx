@@ -108,23 +108,6 @@ export default async function TeacherDashboardPage() {
             </article>
           </section>
 
-          <section className="mt-8 rounded-2xl border border-default bg-white p-6 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-ui-primary">My classes are now in their own page</h2>
-                <p className="mt-1 text-sm text-ui-muted">
-                  Open the dedicated classes workspace to manage sections and jump into class tools.
-                </p>
-              </div>
-              <Link
-                href="/teacher/classes"
-                className="ui-motion-color rounded-xl border border-accent bg-accent-soft px-4 py-2 text-sm font-semibold text-accent hover:bg-accent-soft"
-              >
-                Open My Classes
-              </Link>
-            </div>
-          </section>
-
           <section className="mt-8">
             <div className="mb-4 flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-ui-primary">Recent classes</h2>
