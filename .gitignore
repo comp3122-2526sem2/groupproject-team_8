@@ -47,3 +47,9 @@ supabase/.temp/
 
 # Claude Code
 .claude/
+
+# Codex
+.codex/
+
+# Cursor
+.cursor/
