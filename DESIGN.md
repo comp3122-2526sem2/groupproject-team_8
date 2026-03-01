@@ -107,6 +107,8 @@ Student Flow
 - Shared animation defaults are centralized through a global Motion provider (`motion/react`) in layout.
 - Icons are standardized via `lucide-react` with an app-level icon registry (`web/src/components/icons/index.tsx`).
 - Theme tokens remain CSS-variable driven and warm/academic in `web/src/app/globals.css`, with semantic token aliases to support gradual migration from legacy utility classes.
+- Editor-heavy class surfaces (Blueprint, Quiz Draft, Flashcards Draft, Assignment Review) now consume shared primitives and motion presets instead of page-local control styling.
+- Guardrails include contrast utility checks and an inline-SVG allowlist test (`web/src/lib/no-inline-svg-guardrails.test.ts`) to keep icon/symbol usage centralized.
 
 **AI Provider Support**
 

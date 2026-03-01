@@ -1,12 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { motion } from "motion/react";
 import PendingSubmitButton from "@/app/components/PendingSubmitButton";
 import {
   createQuizAssignment,
   publishQuizActivity,
   saveQuizDraft,
 } from "@/app/classes/[classId]/quiz/actions";
+import { AppIcons } from "@/components/icons";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { STAGGER_CONTAINER, STAGGER_ITEM } from "@/lib/motion/presets";
 
 type EditableQuestion = {
   question: string;
@@ -106,189 +116,204 @@ export default function QuizDraftEditor({
 
   return (
     <div className="space-y-8">
-      <form action={saveQuizDraft.bind(null, classId, activityId)} className="space-y-6">
-        <input type="hidden" name="quiz_payload" value={payload} readOnly />
+      {isPublished ? (
+        <Alert variant="warning">
+          <AlertTitle>Quiz is published</AlertTitle>
+          <AlertDescription>
+            Draft content is now read-only. You can still create assignments.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
-        <div className="space-y-2">
-          <label className="text-sm text-ui-muted" htmlFor="quiz-title">
-            Quiz Title
-          </label>
-          <input
-            id="quiz-title"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            disabled={isPublished}
-            className="w-full rounded-xl border border-default bg-white px-4 py-3 text-sm text-ui-primary outline-none focus-ring-warm disabled:cursor-not-allowed disabled:opacity-70"
-          />
-        </div>
+      <Card className="rounded-3xl">
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2">
+            <AppIcons.quiz className="h-5 w-5" />
+            Quiz Draft
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <form action={saveQuizDraft.bind(null, classId, activityId)} className="space-y-6">
+            <input type="hidden" name="quiz_payload" value={payload} readOnly />
 
-        <div className="space-y-2">
-          <label className="text-sm text-ui-muted" htmlFor="quiz-instructions">
-            Instructions
-          </label>
-          <textarea
-            id="quiz-instructions"
-            value={instructions}
-            onChange={(event) => setInstructions(event.target.value)}
-            rows={3}
-            disabled={isPublished}
-            className="w-full rounded-xl border border-default bg-white px-4 py-3 text-sm text-ui-primary outline-none focus-ring-warm disabled:cursor-not-allowed disabled:opacity-70"
-          />
-        </div>
+            <div className="space-y-2">
+              <Label htmlFor="quiz-title">Quiz Title</Label>
+              <Input
+                id="quiz-title"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                disabled={isPublished}
+              />
+            </div>
 
-        <div className="space-y-4">
-          {questions.map((question, questionIndex) => (
-            <section
-              key={`question-${questionIndex}`}
-              className="rounded-2xl border border-default bg-[var(--surface-muted)] p-4"
+            <div className="space-y-2">
+              <Label htmlFor="quiz-instructions">Instructions</Label>
+              <Textarea
+                id="quiz-instructions"
+                value={instructions}
+                onChange={(event) => setInstructions(event.target.value)}
+                rows={3}
+                disabled={isPublished}
+              />
+            </div>
+
+            <motion.div
+              className="space-y-4"
+              initial="initial"
+              animate="enter"
+              variants={STAGGER_CONTAINER}
             >
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-semibold text-ui-subtle">Question {questionIndex + 1}</p>
-                <button
-                  type="button"
-                  onClick={() => removeQuestion(questionIndex)}
-                  disabled={isPublished || questions.length === 1}
-                  className="rounded-lg border border-rose-500/40 px-3 py-1 text-xs text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Remove
-                </button>
-              </div>
+              {questions.map((question, questionIndex) => (
+                <motion.section key={`question-${questionIndex}`} variants={STAGGER_ITEM}>
+                  <Card className="rounded-2xl bg-[var(--surface-muted)]">
+                    <CardContent className="p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-ui-subtle">
+                          Question {questionIndex + 1}
+                        </p>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => removeQuestion(questionIndex)}
+                          disabled={isPublished || questions.length === 1}
+                        >
+                          Remove
+                        </Button>
+                      </div>
 
-              <div className="space-y-2">
-                <label className="text-xs uppercase tracking-[0.2em] text-ui-muted">Prompt</label>
-                <textarea
-                  value={question.question}
-                  onChange={(event) =>
-                    updateQuestion(questionIndex, {
-                      question: event.target.value,
-                    })
-                  }
-                  rows={2}
-                  disabled={isPublished}
-                  className="w-full rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm disabled:cursor-not-allowed disabled:opacity-70"
+                      <div className="space-y-2">
+                        <Label className="text-xs uppercase tracking-[0.2em]">Prompt</Label>
+                        <Textarea
+                          value={question.question}
+                          onChange={(event) =>
+                            updateQuestion(questionIndex, {
+                              question: event.target.value,
+                            })
+                          }
+                          rows={2}
+                          disabled={isPublished}
+                        />
+                      </div>
+
+                      <div className="mt-4 space-y-3">
+                        {question.choices.map((choice, choiceIndex) => (
+                          <div key={`choice-${questionIndex}-${choiceIndex}`} className="space-y-1">
+                            <Label className="text-xs uppercase tracking-[0.2em]">
+                              Choice {choiceIndex + 1}
+                            </Label>
+                            <Input
+                              value={choice}
+                              onChange={(event) =>
+                                updateChoice(questionIndex, choiceIndex, event.target.value)
+                              }
+                              disabled={isPublished}
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 grid gap-4 md:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs uppercase tracking-[0.2em]">
+                            Correct Answer
+                          </Label>
+                          <select
+                            value={question.answer}
+                            onChange={(event) =>
+                              updateQuestion(questionIndex, {
+                                answer: event.target.value,
+                              })
+                            }
+                            disabled={isPublished}
+                            className="flex h-10 w-full min-w-0 rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <option value="">Select a correct answer</option>
+                            {question.choices.map((choice, choiceIndex) => (
+                              <option
+                                key={`answer-option-${questionIndex}-${choiceIndex}`}
+                                value={choice}
+                              >
+                                {choice || `Choice ${choiceIndex + 1}`}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs uppercase tracking-[0.2em]">Explanation</Label>
+                          <Textarea
+                            value={question.explanation}
+                            onChange={(event) =>
+                              updateQuestion(questionIndex, {
+                                explanation: event.target.value,
+                              })
+                            }
+                            rows={2}
+                            disabled={isPublished}
+                          />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.section>
+              ))}
+            </motion.div>
+
+            {!isPublished ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="button" variant="outline" onClick={addQuestion}>
+                  <AppIcons.add className="h-4 w-4" />
+                  Add Question
+                </Button>
+                <PendingSubmitButton
+                  label="Save Draft"
+                  pendingLabel="Saving..."
+                  variant="warm"
                 />
               </div>
+            ) : null}
+          </form>
+        </CardContent>
+      </Card>
 
-              <div className="mt-4 space-y-3">
-                {question.choices.map((choice, choiceIndex) => (
-                  <div key={`choice-${questionIndex}-${choiceIndex}`} className="space-y-1">
-                    <label className="text-xs uppercase tracking-[0.2em] text-ui-muted">
-                      Choice {choiceIndex + 1}
-                    </label>
-                    <input
-                      value={choice}
-                      onChange={(event) =>
-                        updateChoice(questionIndex, choiceIndex, event.target.value)
-                      }
-                      disabled={isPublished}
-                      className="w-full rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm disabled:cursor-not-allowed disabled:opacity-70"
-                    />
-                  </div>
-                ))}
-              </div>
+      <Card className="rounded-2xl">
+        <CardHeader className="pb-3">
+          <CardTitle>Publish and Assign</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-ui-muted">
+            Publish to lock question content, then create a whole-class assignment.
+          </p>
 
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <div className="space-y-1">
-                  <label className="text-xs uppercase tracking-[0.2em] text-ui-muted">
-                    Correct Answer
-                  </label>
-                  <select
-                    value={question.answer}
-                    onChange={(event) =>
-                      updateQuestion(questionIndex, {
-                        answer: event.target.value,
-                      })
-                    }
-                    disabled={isPublished}
-                    className="w-full rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    <option value="">Select a correct answer</option>
-                    {question.choices.map((choice, choiceIndex) => (
-                      <option key={`answer-option-${questionIndex}-${choiceIndex}`} value={choice}>
-                        {choice || `Choice ${choiceIndex + 1}`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+          <div className="mt-4 flex flex-wrap gap-3">
+            {!isPublished ? (
+              <form action={publishQuizActivity.bind(null, classId, activityId)}>
+                <PendingSubmitButton
+                  label="Publish Quiz"
+                  pendingLabel="Publishing..."
+                  variant="warm"
+                />
+              </form>
+            ) : (
+              <Badge variant="success">Quiz is published</Badge>
+            )}
 
-                <div className="space-y-1">
-                  <label className="text-xs uppercase tracking-[0.2em] text-ui-muted">
-                    Explanation
-                  </label>
-                  <textarea
-                    value={question.explanation}
-                    onChange={(event) =>
-                      updateQuestion(questionIndex, {
-                        explanation: event.target.value,
-                      })
-                    }
-                    rows={2}
-                    disabled={isPublished}
-                    className="w-full rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm disabled:cursor-not-allowed disabled:opacity-70"
-                  />
-                </div>
-              </div>
-            </section>
-          ))}
-        </div>
-
-        {!isPublished ? (
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={addQuestion}
-              className="rounded-xl border border-default px-4 py-2 text-sm text-ui-subtle hover:border-accent hover:bg-accent-soft"
+            <form
+              action={createQuizAssignment.bind(null, classId, activityId)}
+              className="flex flex-wrap items-center gap-3"
             >
-              Add Question
-            </button>
-            <PendingSubmitButton
-              label="Save Draft"
-              pendingLabel="Saving..."
-              className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-ui-primary hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </div>
-        ) : null}
-      </form>
-
-      <div className="rounded-2xl border border-default bg-white p-4">
-        <h2 className="text-lg font-semibold">Publish and Assign</h2>
-        <p className="mt-2 text-sm text-ui-muted">
-          Publish to lock question content, then create a whole-class assignment.
-        </p>
-
-        <div className="mt-4 flex flex-wrap gap-3">
-          {!isPublished ? (
-            <form action={publishQuizActivity.bind(null, classId, activityId)}>
+              <Input name="due_at" type="datetime-local" />
               <PendingSubmitButton
-                label="Publish Quiz"
-                pendingLabel="Publishing..."
-                className="rounded-xl bg-emerald-400/90 px-4 py-2 text-sm font-semibold text-ui-primary hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-emerald-400/50"
+                label="Create Assignment"
+                pendingLabel="Creating..."
+                disabled={!isPublished}
+                variant="warm"
               />
             </form>
-          ) : (
-            <span className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
-              Quiz is published
-            </span>
-          )}
-
-          <form
-            action={createQuizAssignment.bind(null, classId, activityId)}
-            className="flex flex-wrap items-center gap-3"
-          >
-            <input
-              name="due_at"
-              type="datetime-local"
-              className="rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm"
-            />
-            <PendingSubmitButton
-              label="Create Assignment"
-              pendingLabel="Creating..."
-              disabled={!isPublished}
-              className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-ui-primary hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </form>
-        </div>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

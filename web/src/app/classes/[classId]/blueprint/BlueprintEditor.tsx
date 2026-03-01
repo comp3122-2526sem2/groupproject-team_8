@@ -8,6 +8,14 @@ import {
   createDraftFromPublished,
   saveDraft,
 } from "@/app/classes/[classId]/blueprint/actions";
+import { AppIcons } from "@/components/icons";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 const BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 
@@ -245,14 +253,9 @@ function SaveDraftButton() {
   const { pending } = useFormStatus();
 
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      aria-busy={pending}
-      className="rounded-full bg-accent px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-ui-primary disabled:opacity-60"
-    >
+    <Button type="submit" disabled={pending} aria-busy={pending} variant="warm" size="sm">
       {pending ? "Saving..." : "Save draft"}
-    </button>
+    </Button>
   );
 }
 
@@ -260,14 +263,9 @@ function StartDraftButton() {
   const { pending } = useFormStatus();
 
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      aria-busy={pending}
-      className="rounded-full border border-accent bg-accent-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-accent disabled:cursor-not-allowed disabled:opacity-60"
-    >
+    <Button type="submit" disabled={pending} aria-busy={pending} variant="outline" size="sm">
       {pending ? "Starting..." : "Start new draft"}
-    </button>
+    </Button>
   );
 }
 
@@ -275,14 +273,9 @@ function ApproveBlueprintButton() {
   const { pending } = useFormStatus();
 
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      aria-busy={pending}
-      className="rounded-full bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-ui-primary disabled:cursor-not-allowed disabled:opacity-60"
-    >
+    <Button type="submit" disabled={pending} aria-busy={pending} variant="warm" size="sm">
       {pending ? "Approving..." : "Approve & view"}
-    </button>
+    </Button>
   );
 }
 
@@ -673,9 +666,11 @@ export function BlueprintEditor({
 
   if (!blueprint || !initialDraft) {
     return (
-      <div className="rounded-3xl border border-dashed border-default bg-[var(--surface-muted)] p-6 text-sm text-ui-muted">
-        No blueprint yet. Generate one to start editing.
-      </div>
+      <Card className="rounded-3xl border-dashed bg-[var(--surface-muted)]">
+        <CardContent className="p-6 text-sm text-ui-muted">
+          No blueprint yet. Generate one to start editing.
+        </CardContent>
+      </Card>
     );
   }
 
@@ -686,16 +681,15 @@ export function BlueprintEditor({
           <p className="text-xs uppercase tracking-[0.25em] text-ui-muted">
             Version {blueprint.version}
           </p>
-          <p className="text-sm text-ui-muted">Status: {blueprint.status}</p>
+          <p className="mt-1">
+            <Badge variant="outline">Status: {blueprint.status}</Badge>
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {canViewOverview ? (
-            <Link
-              href={`/classes/${classId}/blueprint/overview`}
-              className="rounded-full border border-default px-4 py-2 text-xs uppercase tracking-[0.2em] text-ui-subtle transition hover:border-accent"
-            >
-              View overview
-            </Link>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/classes/${classId}/blueprint/overview`}>View overview</Link>
+            </Button>
           ) : null}
           {blueprint?.status === "published" && isOwner && !isEditing ? (
             <form action={createDraftFromPublished.bind(null, classId)}>
@@ -708,43 +702,37 @@ export function BlueprintEditor({
             </form>
           ) : null}
           {canEdit ? (
-            <button
-              type="button"
-              onClick={() => setIsEditing((prev) => !prev)}
-              className="rounded-full border border-default px-4 py-2 text-xs uppercase tracking-[0.2em] text-ui-subtle transition hover:border-accent"
-            >
+            <Button type="button" onClick={() => setIsEditing((prev) => !prev)} variant="outline" size="sm">
               {isEditing ? "Close editor" : "Edit draft"}
-            </button>
+            </Button>
           ) : null}
         </div>
       </div>
 
       {warningMessage ? (
-        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          {warningMessage}
-        </div>
+        <Alert variant="warning">
+          <AlertTitle>Publishing state notice</AlertTitle>
+          <AlertDescription>{warningMessage}</AlertDescription>
+        </Alert>
       ) : null}
 
       {recoverableDraft ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent bg-accent-soft px-4 py-3 text-xs text-accent">
-          <p>Unsaved local changes were found for this blueprint.</p>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleRestoreLocalDraft}
-              className="rounded-full bg-accent-strong px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/95"
-            >
-              Restore
-            </button>
-            <button
-              type="button"
-              onClick={handleDismissLocalDraft}
-              className="rounded-full border border-accent px-3 py-1.5 text-[11px] uppercase tracking-[0.2em] text-accent"
-            >
-              Dismiss
-            </button>
+        <Alert variant="accent">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <AlertTitle>Local recovery available</AlertTitle>
+              <AlertDescription>Unsaved local changes were found for this blueprint.</AlertDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button type="button" onClick={handleRestoreLocalDraft} size="sm" variant="warm">
+                Restore
+              </Button>
+              <Button type="button" onClick={handleDismissLocalDraft} size="sm" variant="outline">
+                Dismiss
+              </Button>
+            </div>
           </div>
-        </div>
+        </Alert>
       ) : null}
 
       {isEditing ? (
@@ -752,18 +740,20 @@ export function BlueprintEditor({
           <form action={saveDraft.bind(null, classId, blueprint.id)} className="space-y-6">
             <input type="hidden" name="draft" value={serializedDraft} />
 
-            <div className="rounded-3xl border border-default bg-white p-6">
-              <label className="text-sm font-semibold" htmlFor="summary">
-                Blueprint summary
-              </label>
-              <textarea
+            <Card className="rounded-3xl">
+              <CardContent className="p-6">
+                <Label className="text-sm font-semibold text-ui-primary" htmlFor="summary">
+                  Blueprint summary
+                </Label>
+                <Textarea
                 id="summary"
                 value={draft.summary}
                 onChange={(event) => handleSummaryChange(event.target.value)}
                 rows={4}
-                className="mt-3 w-full rounded-2xl border border-default bg-white px-4 py-3 text-sm text-ui-primary outline-none focus-ring-warm"
+                className="mt-3 rounded-2xl"
               />
-            </div>
+              </CardContent>
+            </Card>
 
             <div className="space-y-4">
               {draft.topics.map((topic, index) => {
@@ -775,30 +765,26 @@ export function BlueprintEditor({
                 );
 
                 return (
-                  <div
-                    key={topic.clientId}
-                    className="rounded-3xl border border-default bg-white p-6"
-                  >
+                  <Card key={topic.clientId} className="rounded-3xl">
+                    <CardContent className="p-6">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <p className="text-sm font-semibold">Topic {index + 1}</p>
-                      <button
+                      <Button
                         type="button"
                         onClick={() => handleRemoveTopic(topic.clientId)}
                         disabled={draft.topics.length <= 1}
-                        className="text-xs uppercase tracking-[0.2em] text-rose-700 disabled:opacity-40"
+                        variant="destructive"
+                        size="sm"
                       >
                         Remove topic
-                      </button>
+                      </Button>
                     </div>
                     <div className="mt-4 grid gap-4 md:grid-cols-3">
                       <div className="md:col-span-2">
-                        <label
-                          className="text-xs uppercase tracking-[0.2em] text-ui-muted"
-                          htmlFor={`topic-${topic.clientId}-title`}
-                        >
+                        <Label className="text-xs uppercase tracking-[0.2em]" htmlFor={`topic-${topic.clientId}-title`}>
                           Title
-                        </label>
-                        <input
+                        </Label>
+                        <Input
                           id={`topic-${topic.clientId}-title`}
                           value={topic.title}
                           onChange={(event) =>
@@ -806,17 +792,14 @@ export function BlueprintEditor({
                               title: event.target.value,
                             })
                           }
-                          className="mt-2 w-full rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm"
+                          className="mt-2"
                         />
                       </div>
                       <div>
-                        <label
-                          className="text-xs uppercase tracking-[0.2em] text-ui-muted"
-                          htmlFor={`topic-${topic.clientId}-sequence`}
-                        >
+                        <Label className="text-xs uppercase tracking-[0.2em]" htmlFor={`topic-${topic.clientId}-sequence`}>
                           Sequence
-                        </label>
-                        <input
+                        </Label>
+                        <Input
                           id={`topic-${topic.clientId}-sequence`}
                           type="number"
                           min={1}
@@ -828,18 +811,15 @@ export function BlueprintEditor({
                               sequence: Number(event.target.value),
                             })
                           }
-                          className="mt-2 w-full rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm"
+                          className="mt-2"
                         />
                       </div>
                     </div>
                     <div className="mt-4">
-                      <label
-                        className="text-xs uppercase tracking-[0.2em] text-ui-muted"
-                        htmlFor={`topic-${topic.clientId}-description`}
-                      >
+                      <Label className="text-xs uppercase tracking-[0.2em]" htmlFor={`topic-${topic.clientId}-description`}>
                         Description
-                      </label>
-                      <textarea
+                      </Label>
+                      <Textarea
                         id={`topic-${topic.clientId}-description`}
                         value={topic.description ?? ""}
                         onChange={(event) =>
@@ -848,17 +828,14 @@ export function BlueprintEditor({
                           })
                         }
                         rows={3}
-                        className="mt-2 w-full rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm"
+                        className="mt-2"
                       />
                     </div>
                     <div className="mt-4">
-                      <label
-                        className="text-xs uppercase tracking-[0.2em] text-ui-muted"
-                        htmlFor={`topic-${topic.clientId}-section`}
-                      >
+                      <Label className="text-xs uppercase tracking-[0.2em]" htmlFor={`topic-${topic.clientId}-section`}>
                         Section
-                      </label>
-                      <input
+                      </Label>
+                      <Input
                         id={`topic-${topic.clientId}-section`}
                         value={topic.section ?? ""}
                         onChange={(event) =>
@@ -866,7 +843,7 @@ export function BlueprintEditor({
                             section: event.target.value,
                           })
                         }
-                        className="mt-2 w-full rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm"
+                        className="mt-2"
                       />
                     </div>
 
@@ -882,29 +859,35 @@ export function BlueprintEditor({
                               className="flex flex-wrap items-center gap-2 rounded-full border border-default bg-[var(--surface-muted)] px-3 py-1 text-xs text-ui-subtle"
                             >
                               <span>{topicTitleById.get(prereqId) ?? "Untitled"}</span>
-                              <button
+                              <Button
                                 type="button"
                                 onClick={() => handleMovePrerequisite(topic.clientId, prereqId, -1)}
                                 disabled={prereqIndex === 0}
-                                className="rounded-full border border-default px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] disabled:opacity-40"
+                                size="sm"
+                                variant="outline"
+                                className="h-6 rounded-full px-2 text-[10px] uppercase tracking-[0.15em]"
                               >
                                 Up
-                              </button>
-                              <button
+                              </Button>
+                              <Button
                                 type="button"
                                 onClick={() => handleMovePrerequisite(topic.clientId, prereqId, 1)}
                                 disabled={prereqIndex === selectedPrereqs.length - 1}
-                                className="rounded-full border border-default px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] disabled:opacity-40"
+                                size="sm"
+                                variant="outline"
+                                className="h-6 rounded-full px-2 text-[10px] uppercase tracking-[0.15em]"
                               >
                                 Down
-                              </button>
-                              <button
+                              </Button>
+                              <Button
                                 type="button"
                                 onClick={() => handleRemovePrerequisite(topic.clientId, prereqId)}
-                                className="rounded-full border border-rose-400/40 px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-rose-700"
+                                size="sm"
+                                variant="destructive"
+                                className="h-6 rounded-full px-2 text-[10px] uppercase tracking-[0.15em]"
                               >
                                 Remove
-                              </button>
+                              </Button>
                             </div>
                           ))
                         ) : (
@@ -932,18 +915,19 @@ export function BlueprintEditor({
                       </select>
                     </div>
 
-                    <div className="mt-4 space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <p className="text-xs uppercase tracking-[0.2em] text-ui-muted">
-                          Objectives
-                        </p>
-                        <button
+                      <div className="mt-4 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <p className="text-xs uppercase tracking-[0.2em] text-ui-muted">
+                            Objectives
+                          </p>
+                        <Button
                           type="button"
                           onClick={() => handleAddObjective(topic.clientId)}
-                          className="text-xs uppercase tracking-[0.2em] text-accent"
+                          size="sm"
+                          variant="outline"
                         >
                           Add objective
-                        </button>
+                        </Button>
                       </div>
                       {topic.objectives.map((objective) => (
                         <div
@@ -954,24 +938,25 @@ export function BlueprintEditor({
                             <p className="text-xs uppercase tracking-[0.2em] text-ui-muted">
                               Objective
                             </p>
-                            <button
+                            <Button
                               type="button"
                               onClick={() =>
                                 handleRemoveObjective(topic.clientId, objective.clientId)
                               }
                               disabled={topic.objectives.length <= 1}
-                              className="text-xs uppercase tracking-[0.2em] text-rose-700 disabled:opacity-40"
+                              size="sm"
+                              variant="destructive"
                             >
                               Remove
-                            </button>
+                            </Button>
                           </div>
-                          <label
-                            className="mt-3 block text-xs uppercase tracking-[0.2em] text-ui-muted"
+                          <Label
+                            className="mt-3 block text-xs uppercase tracking-[0.2em]"
                             htmlFor={`objective-${objective.clientId}-statement`}
                           >
                             Statement
-                          </label>
-                          <textarea
+                          </Label>
+                          <Textarea
                             id={`objective-${objective.clientId}-statement`}
                             value={objective.statement}
                             onChange={(event) =>
@@ -980,15 +965,15 @@ export function BlueprintEditor({
                               })
                             }
                             rows={2}
-                            className="mt-2 w-full rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm"
+                            className="mt-2"
                           />
                           <div className="mt-3">
-                            <label
-                              className="text-xs uppercase tracking-[0.2em] text-ui-muted"
+                            <Label
+                              className="text-xs uppercase tracking-[0.2em]"
                               htmlFor={`objective-${objective.clientId}-level`}
                             >
                               Bloom level
-                            </label>
+                            </Label>
                             <select
                               id={`objective-${objective.clientId}-level`}
                               value={objective.level ?? ""}
@@ -1010,45 +995,46 @@ export function BlueprintEditor({
                         </div>
                       ))}
                     </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 );
               })}
             </div>
 
-            <button
-              type="button"
-              onClick={handleAddTopic}
-              className="w-full rounded-2xl border border-dashed border-accent bg-accent-soft px-4 py-3 text-sm text-accent"
-            >
+            <Button type="button" onClick={handleAddTopic} variant="outline" className="w-full border-dashed">
+              <AppIcons.add className="h-4 w-4" />
               Add topic
-            </button>
+            </Button>
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
-                <button
+                <Button
                   type="button"
                   onClick={() => dispatch({ type: "undo" })}
                   disabled={!canUndo}
-                  className="rounded-full border border-default px-4 py-2 text-xs uppercase tracking-[0.2em] text-ui-subtle disabled:opacity-40"
+                  variant="outline"
+                  size="sm"
                 >
                   Undo
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   onClick={() => dispatch({ type: "redo" })}
                   disabled={!canRedo}
-                  className="rounded-full border border-default px-4 py-2 text-xs uppercase tracking-[0.2em] text-ui-subtle disabled:opacity-40"
+                  variant="outline"
+                  size="sm"
                 >
                   Redo
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   onClick={handleReset}
                   disabled={!hasChanges}
-                  className="rounded-full border border-default px-4 py-2 text-xs uppercase tracking-[0.2em] text-ui-subtle disabled:opacity-40"
+                  variant="outline"
+                  size="sm"
                 >
                   Discard changes
-                </button>
+                </Button>
               </div>
               <div className="flex flex-col items-end gap-2">
                 {draftByteSize > MAX_DRAFT_BYTES ? (
@@ -1063,13 +1049,16 @@ export function BlueprintEditor({
           </form>
 
           <aside className="space-y-4">
-            <div className="rounded-3xl border border-default bg-white p-6">
-              <h2 className="text-lg font-semibold">Topic map</h2>
-              <p className="mt-2 text-sm text-ui-muted">
-                A quick dependency view based on sequences and prerequisites.
-              </p>
-            </div>
-            <div className="rounded-3xl border border-default bg-white p-6">
+            <Card className="rounded-3xl">
+              <CardContent className="p-6">
+                <h2 className="text-lg font-semibold">Topic map</h2>
+                <p className="mt-2 text-sm text-ui-muted">
+                  A quick dependency view based on sequences and prerequisites.
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="rounded-3xl">
+              <CardContent className="p-6">
               {draft.topics.length === 0 ? (
                 <p className="text-sm text-ui-muted">Add topics to see the map.</p>
               ) : topicMap.errorMessage ? (
@@ -1174,21 +1163,22 @@ export function BlueprintEditor({
                   );
                 })()
               )}
-            </div>
+              </CardContent>
+            </Card>
           </aside>
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="rounded-3xl border border-default bg-white p-6">
-            <h2 className="text-lg font-semibold">Blueprint summary</h2>
-            <p className="mt-2 text-sm text-ui-muted">{draft.summary}</p>
-          </div>
+          <Card className="rounded-3xl">
+            <CardContent className="p-6">
+              <h2 className="text-lg font-semibold">Blueprint summary</h2>
+              <p className="mt-2 text-sm text-ui-muted">{draft.summary}</p>
+            </CardContent>
+          </Card>
           <div className="space-y-4">
             {draft.topics.map((topic) => (
-              <div
-                key={topic.clientId}
-                className="rounded-2xl border border-default bg-[var(--surface-muted)] p-4"
-              >
+              <Card key={topic.clientId} className="rounded-2xl bg-[var(--surface-muted)]">
+                <CardContent className="p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h3 className="text-base font-semibold">{topic.title}</h3>
@@ -1221,7 +1211,8 @@ export function BlueprintEditor({
                     </li>
                   ))}
                 </ul>
-              </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
         </div>

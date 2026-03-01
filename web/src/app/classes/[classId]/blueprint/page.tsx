@@ -6,6 +6,10 @@ import { BlueprintEditor } from "@/app/classes/[classId]/blueprint/BlueprintEdit
 import BlueprintTimeoutRetryBanner from "@/app/classes/[classId]/blueprint/BlueprintTimeoutRetryBanner";
 import AuthHeader from "@/app/components/AuthHeader";
 import PendingSubmitButton from "@/app/components/PendingSubmitButton";
+import { AppIcons } from "@/components/icons";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type SearchParams = {
   error?: string;
@@ -184,90 +188,115 @@ export default async function BlueprintPage({
             retryAction={retryGenerationAction}
           />
         ) : errorMessage ? (
-          <div className="mb-6 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-700">
-            <p>{errorMessage}</p>
-          </div>
+          <Alert variant="error" className="mb-6">
+            <AlertTitle>Blueprint generation failed</AlertTitle>
+            <AlertDescription>{errorMessage}</AlertDescription>
+          </Alert>
         ) : null}
 
         {generatedMessage ? (
-          <div className="mb-6 rounded-xl border border-accent bg-accent-soft px-4 py-3 text-sm text-accent">
-            {generatedMessage}
-          </div>
+          <Alert variant="accent" className="mb-6">
+            <AlertTitle>Blueprint generated</AlertTitle>
+            <AlertDescription>{generatedMessage}</AlertDescription>
+          </Alert>
         ) : null}
         {savedMessage ? (
-          <div className="mb-6 rounded-xl border border-accent bg-accent-soft px-4 py-3 text-sm text-accent">
-            {savedMessage}
-          </div>
+          <Alert variant="accent" className="mb-6">
+            <AlertTitle>Draft saved</AlertTitle>
+            <AlertDescription>{savedMessage}</AlertDescription>
+          </Alert>
         ) : null}
         {approvedMessage ? (
-          <div className="mb-6 rounded-xl border border-accent bg-accent-soft px-4 py-3 text-sm text-accent">
-            {approvedMessage}
-          </div>
+          <Alert variant="accent" className="mb-6">
+            <AlertTitle>Blueprint approved</AlertTitle>
+            <AlertDescription>{approvedMessage}</AlertDescription>
+          </Alert>
         ) : null}
         {publishedMessage ? (
-          <div className="mb-6 rounded-xl border border-accent bg-accent-soft px-4 py-3 text-sm text-accent">
-            {publishedMessage}
-          </div>
+          <Alert variant="success" className="mb-6">
+            <AlertTitle>Blueprint published</AlertTitle>
+            <AlertDescription>{publishedMessage}</AlertDescription>
+          </Alert>
         ) : null}
         {draftedMessage ? (
-          <div className="mb-6 rounded-xl border border-accent bg-accent-soft px-4 py-3 text-sm text-accent">
-            {draftedMessage}
-          </div>
+          <Alert variant="accent" className="mb-6">
+            <AlertTitle>Draft version created</AlertTitle>
+            <AlertDescription>{draftedMessage}</AlertDescription>
+          </Alert>
         ) : null}
 
         <section className="grid gap-6 lg:grid-cols-3">
-          <div className="rounded-3xl border border-default bg-white p-6 lg:col-span-2">
-            <h2 className="text-lg font-semibold">Blueprint workspace</h2>
-            <p className="mt-2 text-sm text-ui-muted">
-              Edit the draft, approve for overview, and publish when ready.
-            </p>
-          </div>
-          <div className="rounded-3xl border border-default bg-white p-6">
-            <h2 className="text-lg font-semibold">Materials check</h2>
-            <p className="mt-2 text-sm text-ui-muted">
-              {materialCount === 0
-                ? "Upload materials before generating the blueprint."
-                : readyMaterialCount > 0
-                  ? `${readyMaterialCount} of ${materialCount} materials are processed and ready.`
-                  : "Materials uploaded, but none are processed yet."}
-            </p>
-            {isTeacher ? (
-              <form action={generateBlueprint.bind(null, classRow.id)}>
-                <PendingSubmitButton
-                  label="Generate blueprint"
-                  pendingLabel="Generating blueprint..."
-                  disabled={!hasReadyMaterials}
-                  className="mt-6 w-full rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-ui-primary hover:bg-accent-strong disabled:cursor-not-allowed disabled:bg-accent-soft"
-                />
-                {!hasReadyMaterials ? (
-                  <p className="mt-3 text-xs text-ui-muted">
-                    {materialCount > 0
-                      ? processingMaterialCount > 0
-                        ? `${processingMaterialCount} material${processingMaterialCount === 1 ? " is" : "s are"} still processing.`
-                        : "At least one processed material is required."
-                      : "Upload at least one material to enable blueprint generation."}
-                  </p>
-                ) : null}
-              </form>
-            ) : (
-              <p className="mt-4 text-xs text-ui-muted">
-                Only teachers can regenerate the blueprint.
+          <Card className="rounded-3xl lg:col-span-2">
+            <CardHeader className="pb-3">
+              <CardTitle>Blueprint workspace</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-ui-muted">
+                Edit the draft, approve for overview, and publish when ready.
               </p>
-            )}
-          </div>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">
+                  <AppIcons.fileText className="h-3.5 w-3.5" />
+                  Draft
+                </Badge>
+                <Badge variant="secondary">Owner review required</Badge>
+                <Badge variant="secondary">Publish to unlock student blueprint view</Badge>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="rounded-3xl">
+            <CardHeader className="pb-3">
+              <CardTitle>Materials check</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-ui-muted">
+                {materialCount === 0
+                  ? "Upload materials before generating the blueprint."
+                  : readyMaterialCount > 0
+                    ? `${readyMaterialCount} of ${materialCount} materials are processed and ready.`
+                    : "Materials uploaded, but none are processed yet."}
+              </p>
+              {isTeacher ? (
+                <form action={generateBlueprint.bind(null, classRow.id)}>
+                  <PendingSubmitButton
+                    label="Generate blueprint"
+                    pendingLabel="Generating blueprint..."
+                    disabled={!hasReadyMaterials}
+                    variant="warm"
+                    className="mt-6 w-full"
+                  />
+                  {!hasReadyMaterials ? (
+                    <p className="mt-3 text-xs text-ui-muted">
+                      {materialCount > 0
+                        ? processingMaterialCount > 0
+                          ? `${processingMaterialCount} material${processingMaterialCount === 1 ? " is" : "s are"} still processing.`
+                          : "At least one processed material is required."
+                        : "Upload at least one material to enable blueprint generation."}
+                    </p>
+                  ) : null}
+                </form>
+              ) : (
+                <p className="mt-4 text-xs text-ui-muted">
+                  Only teachers can regenerate the blueprint.
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </section>
 
-        <section className="mt-10 rounded-3xl border border-default bg-white p-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Draft editor</h2>
-            <Link
-              href={`/classes/${classRow.id}`}
-              className="ui-motion-color text-xs font-medium text-ui-muted hover:text-ui-subtle"
-            >
-              Back to class
-            </Link>
-          </div>
-          <div className="mt-6">
+        <Card className="mt-10 rounded-3xl">
+          <CardHeader className="pb-4">
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>Draft editor</CardTitle>
+              <Link
+                href={`/classes/${classRow.id}`}
+                className="ui-motion-color text-xs font-medium text-ui-muted hover:text-ui-subtle"
+              >
+                Back to class
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
             <BlueprintEditor
               classId={classRow.id}
               blueprint={
@@ -284,8 +313,8 @@ export default async function BlueprintPage({
               isTeacher={isTeacher}
               isOwner={isOwner}
             />
-          </div>
-        </section>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

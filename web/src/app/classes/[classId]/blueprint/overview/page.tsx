@@ -4,6 +4,9 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { publishBlueprint } from "@/app/classes/[classId]/blueprint/actions";
 import AuthHeader from "@/app/components/AuthHeader";
 import PendingSubmitButton from "@/app/components/PendingSubmitButton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type SearchParams = {
   approved?: string;
@@ -127,13 +130,14 @@ export default async function BlueprintOverviewPage({
         </header>
 
         {approvedMessage ? (
-          <div className="mb-6 rounded-xl border border-accent bg-accent-soft px-4 py-3 text-sm text-accent">
-            {approvedMessage}
-          </div>
+          <Alert variant="accent" className="mb-6">
+            <AlertTitle>Blueprint approved</AlertTitle>
+            <AlertDescription>{approvedMessage}</AlertDescription>
+          </Alert>
         ) : null}
 
-        <div className="rounded-3xl border border-default bg-white p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <Card className="rounded-3xl">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 p-6">
             <div>
               <p className="text-xs uppercase tracking-[0.25em] text-ui-muted">
                 Version {blueprint.version}
@@ -145,82 +149,83 @@ export default async function BlueprintOverviewPage({
                 <PendingSubmitButton
                   label="Publish blueprint"
                   pendingLabel="Publishing..."
-                  className="rounded-full bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-ui-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  variant="warm"
                 />
               </form>
             ) : (
-              <span className="rounded-full border border-emerald-300 bg-emerald-50 px-4 py-2 text-xs uppercase tracking-[0.2em] text-emerald-700">
-                Published
-              </span>
+              <Badge variant="success">Published</Badge>
             )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        <section className="mt-10 rounded-4xl border border-default bg-white text-ui-primary shadow-2xl">
-          <div className="border-b border-default px-10 py-8">
+        <Card className="mt-10 rounded-3xl border-default shadow-xl">
+          <CardHeader className="border-b border-default px-8 py-6">
             <p className="text-xs uppercase tracking-[0.3em] text-ui-muted">Compiled Blueprint</p>
-            <h2 className="mt-3 text-3xl font-semibold text-ui-primary">{classRow.title}</h2>
+            <CardTitle className="mt-3 text-3xl">{classRow.title}</CardTitle>
             <p className="mt-2 text-sm text-ui-muted">
               {classRow.subject || "General"} · {classRow.level || "Mixed level"}
             </p>
-          </div>
-          <div className="px-10 py-8">
-            <div className="rounded-2xl border border-default bg-[var(--surface-muted)] p-6">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-ui-muted">
-                Summary
-              </p>
-              <p className="mt-3 text-base text-ui-subtle">
-                {blueprint.summary || "No summary provided."}
-              </p>
-            </div>
+          </CardHeader>
+          <CardContent className="px-8 py-8">
+            <Card className="rounded-2xl bg-[var(--surface-muted)]">
+              <CardContent className="p-6">
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-ui-muted">
+                  Summary
+                </p>
+                <p className="mt-3 text-base text-ui-subtle">
+                  {blueprint.summary || "No summary provided."}
+                </p>
+              </CardContent>
+            </Card>
 
             <div className="mt-8 space-y-6">
               {topics && topics.length > 0 ? (
                 topics.map((topic) => (
-                  <div key={topic.id} className="rounded-2xl border border-default bg-white p-6">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <h3 className="text-xl font-semibold text-ui-primary">{topic.title}</h3>
-                        {topic.section ? (
-                          <p className="mt-1 text-xs uppercase tracking-[0.2em] text-ui-muted">
-                            Section: {topic.section}
-                          </p>
-                        ) : null}
+                  <Card key={topic.id} className="rounded-2xl">
+                    <CardContent className="p-6">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <h3 className="text-xl font-semibold text-ui-primary">{topic.title}</h3>
+                          {topic.section ? (
+                            <p className="mt-1 text-xs uppercase tracking-[0.2em] text-ui-muted">
+                              Section: {topic.section}
+                            </p>
+                          ) : null}
+                        </div>
+                        <Badge variant="outline">Sequence {topic.sequence}</Badge>
                       </div>
-                      <span className="rounded-full border border-default px-3 py-1 text-xs text-ui-muted">
-                        Sequence {topic.sequence}
-                      </span>
-                    </div>
-                    {topic.description ? (
-                      <p className="mt-3 text-sm text-ui-muted">{topic.description}</p>
-                    ) : null}
-                    {topic.prerequisite_topic_ids.length > 0 ? (
-                      <p className="mt-3 text-xs text-ui-muted">
-                        Prerequisites:{" "}
-                        {topic.prerequisite_topic_ids
-                          .map((id: string) => titleById.get(id))
-                          .filter(Boolean)
-                          .join(", ")}
-                      </p>
-                    ) : null}
-                    <ul className="mt-4 space-y-2 text-sm text-ui-subtle">
-                      {(objectivesByTopic.get(topic.id) ?? []).map((objective, index) => (
-                        <li key={`${topic.id}-objective-${index}`}>
-                          - {objective.statement}
-                          {objective.level ? ` (${objective.level})` : ""}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                      {topic.description ? (
+                        <p className="mt-3 text-sm text-ui-muted">{topic.description}</p>
+                      ) : null}
+                      {topic.prerequisite_topic_ids.length > 0 ? (
+                        <p className="mt-3 text-xs text-ui-muted">
+                          Prerequisites:{" "}
+                          {topic.prerequisite_topic_ids
+                            .map((id: string) => titleById.get(id))
+                            .filter(Boolean)
+                            .join(", ")}
+                        </p>
+                      ) : null}
+                      <ul className="mt-4 space-y-2 text-sm text-ui-subtle">
+                        {(objectivesByTopic.get(topic.id) ?? []).map((objective, index) => (
+                          <li key={`${topic.id}-objective-${index}`}>
+                            - {objective.statement}
+                            {objective.level ? ` (${objective.level})` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
                 ))
               ) : (
-                <div className="rounded-2xl border border-dashed border-default bg-[var(--surface-muted)] p-6 text-sm text-ui-muted">
-                  No topics found in this blueprint.
-                </div>
+                <Alert variant="default">
+                  <AlertTitle>No topics available</AlertTitle>
+                  <AlertDescription>No topics found in this blueprint.</AlertDescription>
+                </Alert>
               )}
             </div>
-          </div>
-        </section>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

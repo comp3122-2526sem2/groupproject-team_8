@@ -54,6 +54,8 @@ This roadmap focuses on production ready delivery with subject agnostic function
 - Basic analytics for progress and engagement.
 - Accessibility and responsive design.
 - Status update: Frontend foundation migrated to shadcn-style primitives + Radix interaction primitives + Motion global transitions, with shared iconography standardized on Lucide and warm-token compatibility preserved.
+- Status update: Frontend migration is complete through high-complexity editor surfaces (blueprint + activity draft editors) with assignment and blueprint route consistency finalized.
+- Status update: UI guardrails now include an inline-SVG allowlist test and existing contrast checks to prevent design-system regressions.
 
 **Phase 5 - Final Delivery**
 

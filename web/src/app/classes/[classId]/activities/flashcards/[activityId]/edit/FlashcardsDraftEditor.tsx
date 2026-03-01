@@ -1,12 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { motion } from "motion/react";
 import PendingSubmitButton from "@/app/components/PendingSubmitButton";
 import {
   createFlashcardsAssignment,
   publishFlashcardsActivity,
   saveFlashcardsDraft,
 } from "@/app/classes/[classId]/flashcards/actions";
+import { AppIcons } from "@/components/icons";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { STAGGER_CONTAINER, STAGGER_ITEM } from "@/lib/motion/presets";
 
 type EditableCard = {
   front: string;
@@ -57,7 +67,9 @@ export default function FlashcardsDraftEditor({
   );
 
   const updateCard = (index: number, next: Partial<EditableCard>) => {
-    setCards((current) => current.map((card, position) => (position === index ? { ...card, ...next } : card)));
+    setCards((current) =>
+      current.map((card, position) => (position === index ? { ...card, ...next } : card)),
+    );
   };
 
   const addCard = () => {
@@ -75,150 +87,163 @@ export default function FlashcardsDraftEditor({
 
   return (
     <div className="space-y-8">
-      <form action={saveFlashcardsDraft.bind(null, classId, activityId)} className="space-y-6">
-        <input type="hidden" name="flashcards_payload" value={payload} readOnly />
+      {isPublished ? (
+        <Alert variant="warning">
+          <AlertTitle>Flashcards are published</AlertTitle>
+          <AlertDescription>
+            Card content is read-only after publish. Assignment creation remains available.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
-        <div className="space-y-2">
-          <label className="text-sm text-ui-muted" htmlFor="flashcards-title">
-            Flashcards Title
-          </label>
-          <input
-            id="flashcards-title"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            disabled={isPublished}
-            className="w-full rounded-xl border border-default bg-white px-4 py-3 text-sm text-ui-primary outline-none focus-ring-warm disabled:cursor-not-allowed disabled:opacity-70"
-          />
-        </div>
+      <Card className="rounded-3xl">
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2">
+            <AppIcons.flashcards className="h-5 w-5" />
+            Flashcards Draft
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <form action={saveFlashcardsDraft.bind(null, classId, activityId)} className="space-y-6">
+            <input type="hidden" name="flashcards_payload" value={payload} readOnly />
 
-        <div className="space-y-2">
-          <label className="text-sm text-ui-muted" htmlFor="flashcards-instructions">
-            Instructions
-          </label>
-          <textarea
-            id="flashcards-instructions"
-            value={instructions}
-            onChange={(event) => setInstructions(event.target.value)}
-            rows={3}
-            disabled={isPublished}
-            className="w-full rounded-xl border border-default bg-white px-4 py-3 text-sm text-ui-primary outline-none focus-ring-warm disabled:cursor-not-allowed disabled:opacity-70"
-          />
-        </div>
+            <div className="space-y-2">
+              <Label htmlFor="flashcards-title">Flashcards Title</Label>
+              <Input
+                id="flashcards-title"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                disabled={isPublished}
+              />
+            </div>
 
-        <div className="space-y-4">
-          {cards.map((card, cardIndex) => (
-            <section
-              key={`card-${cardIndex}`}
-              className="rounded-2xl border border-default bg-[var(--surface-muted)] p-4"
+            <div className="space-y-2">
+              <Label htmlFor="flashcards-instructions">Instructions</Label>
+              <Textarea
+                id="flashcards-instructions"
+                value={instructions}
+                onChange={(event) => setInstructions(event.target.value)}
+                rows={3}
+                disabled={isPublished}
+              />
+            </div>
+
+            <motion.div
+              className="space-y-4"
+              initial="initial"
+              animate="enter"
+              variants={STAGGER_CONTAINER}
             >
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-semibold text-ui-subtle">Card {cardIndex + 1}</p>
-                <button
-                  type="button"
-                  onClick={() => removeCard(cardIndex)}
-                  disabled={isPublished || cards.length === 1}
-                  className="rounded-lg border border-rose-500/40 px-3 py-1 text-xs text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Remove
-                </button>
+              {cards.map((card, cardIndex) => (
+                <motion.section key={`card-${cardIndex}`} variants={STAGGER_ITEM}>
+                  <Card className="rounded-2xl bg-[var(--surface-muted)]">
+                    <CardContent className="p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-ui-subtle">Card {cardIndex + 1}</p>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => removeCard(cardIndex)}
+                          disabled={isPublished || cards.length === 1}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <Label
+                            className="text-xs uppercase tracking-[0.2em]"
+                            htmlFor={`flashcard-front-${cardIndex}`}
+                          >
+                            Front
+                          </Label>
+                          <Textarea
+                            id={`flashcard-front-${cardIndex}`}
+                            value={card.front}
+                            onChange={(event) => updateCard(cardIndex, { front: event.target.value })}
+                            rows={2}
+                            disabled={isPublished}
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label
+                            className="text-xs uppercase tracking-[0.2em]"
+                            htmlFor={`flashcard-back-${cardIndex}`}
+                          >
+                            Back
+                          </Label>
+                          <Textarea
+                            id={`flashcard-back-${cardIndex}`}
+                            value={card.back}
+                            onChange={(event) => updateCard(cardIndex, { back: event.target.value })}
+                            rows={3}
+                            disabled={isPublished}
+                          />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.section>
+              ))}
+            </motion.div>
+
+            {!isPublished ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="button" variant="outline" onClick={addCard}>
+                  <AppIcons.add className="h-4 w-4" />
+                  Add Card
+                </Button>
+                <PendingSubmitButton
+                  label="Save Draft"
+                  pendingLabel="Saving..."
+                  variant="warm"
+                />
               </div>
+            ) : null}
+          </form>
+        </CardContent>
+      </Card>
 
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label
-                    className="text-xs uppercase tracking-[0.2em] text-ui-muted"
-                    htmlFor={`flashcard-front-${cardIndex}`}
-                  >
-                    Front
-                  </label>
-                  <textarea
-                    id={`flashcard-front-${cardIndex}`}
-                    value={card.front}
-                    onChange={(event) => updateCard(cardIndex, { front: event.target.value })}
-                    rows={2}
-                    disabled={isPublished}
-                    className="w-full rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm disabled:cursor-not-allowed disabled:opacity-70"
-                  />
-                </div>
+      <Card className="rounded-2xl">
+        <CardHeader className="pb-3">
+          <CardTitle>Publish and Assign</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-ui-muted">
+            Publish to lock card content, then create a whole-class assignment.
+          </p>
 
-                <div className="space-y-1">
-                  <label
-                    className="text-xs uppercase tracking-[0.2em] text-ui-muted"
-                    htmlFor={`flashcard-back-${cardIndex}`}
-                  >
-                    Back
-                  </label>
-                  <textarea
-                    id={`flashcard-back-${cardIndex}`}
-                    value={card.back}
-                    onChange={(event) => updateCard(cardIndex, { back: event.target.value })}
-                    rows={3}
-                    disabled={isPublished}
-                    className="w-full rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm disabled:cursor-not-allowed disabled:opacity-70"
-                  />
-                </div>
-              </div>
-            </section>
-          ))}
-        </div>
+          <div className="mt-4 flex flex-wrap gap-3">
+            {!isPublished ? (
+              <form action={publishFlashcardsActivity.bind(null, classId, activityId)}>
+                <PendingSubmitButton
+                  label="Publish Flashcards"
+                  pendingLabel="Publishing..."
+                  variant="warm"
+                />
+              </form>
+            ) : (
+              <Badge variant="success">Flashcards are published</Badge>
+            )}
 
-        {!isPublished ? (
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={addCard}
-              className="rounded-xl border border-default px-4 py-2 text-sm text-ui-subtle hover:border-accent hover:bg-accent-soft"
+            <form
+              action={createFlashcardsAssignment.bind(null, classId, activityId)}
+              className="flex flex-wrap items-center gap-3"
             >
-              Add Card
-            </button>
-            <PendingSubmitButton
-              label="Save Draft"
-              pendingLabel="Saving..."
-              className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-ui-primary hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </div>
-        ) : null}
-      </form>
-
-      <div className="rounded-2xl border border-default bg-white p-4">
-        <h2 className="text-lg font-semibold">Publish and Assign</h2>
-        <p className="mt-2 text-sm text-ui-muted">
-          Publish to lock card content, then create a whole-class assignment.
-        </p>
-
-        <div className="mt-4 flex flex-wrap gap-3">
-          {!isPublished ? (
-            <form action={publishFlashcardsActivity.bind(null, classId, activityId)}>
+              <Input name="due_at" type="datetime-local" />
               <PendingSubmitButton
-                label="Publish Flashcards"
-                pendingLabel="Publishing..."
-                className="rounded-xl bg-emerald-400/90 px-4 py-2 text-sm font-semibold text-ui-primary hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-emerald-400/50"
+                label="Create Assignment"
+                pendingLabel="Creating..."
+                disabled={!isPublished}
+                variant="warm"
               />
             </form>
-          ) : (
-            <span className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
-              Flashcards are published
-            </span>
-          )}
-
-          <form
-            action={createFlashcardsAssignment.bind(null, classId, activityId)}
-            className="flex flex-wrap items-center gap-3"
-          >
-            <input
-              name="due_at"
-              type="datetime-local"
-              className="rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm"
-            />
-            <PendingSubmitButton
-              label="Create Assignment"
-              pendingLabel="Creating..."
-              disabled={!isPublished}
-              className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-ui-primary hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </form>
-        </div>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
