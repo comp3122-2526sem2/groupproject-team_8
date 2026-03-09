@@ -9,6 +9,7 @@ fallback and deterministic response envelopes.
 - `POST /v1/llm/generate`
 - `POST /v1/llm/embeddings`
 - `POST /v1/materials/dispatch` (enqueue + optionally trigger Supabase `material-worker`)
+- `POST /v1/blueprints/generate` (domain endpoint for blueprint AI generation)
 
 Response envelope:
 

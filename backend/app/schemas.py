@@ -59,6 +59,23 @@ class MaterialDispatchResult(BaseModel):
     triggered: bool
 
 
+class BlueprintGenerateRequest(BaseModel):
+    class_title: str = Field(min_length=1)
+    subject: str | None = None
+    level: str | None = None
+    material_count: int = Field(ge=1)
+    material_text: str = Field(min_length=1)
+    timeout_ms: int | None = None
+
+
+class BlueprintGenerateResult(BaseModel):
+    payload: dict[str, Any]
+    provider: AiProvider
+    model: str
+    usage: AiUsage | None = None
+    latency_ms: int
+
+
 class ApiError(BaseModel):
     message: str
     code: str | None = None

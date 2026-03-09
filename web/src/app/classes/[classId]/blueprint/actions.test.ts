@@ -148,6 +148,11 @@ function mockRequireVerifiedUserSuccess() {
 describe("generateBlueprint", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.PYTHON_BACKEND_ENABLED;
+    delete process.env.PYTHON_BACKEND_BLUEPRINT_ENABLED;
+    delete process.env.PYTHON_BACKEND_URL;
+    delete process.env.PYTHON_BACKEND_API_KEY;
+    delete process.env.PYTHON_BACKEND_STRICT;
     mockRequireVerifiedUserSuccess();
     supabaseRpcMock.mockResolvedValue({ data: null, error: null });
   });
@@ -383,7 +388,108 @@ describe("generateBlueprint", () => {
       }),
     );
   });
+
+  it("routes blueprint generation through python backend when enabled", async () => {
+    process.env.PYTHON_BACKEND_ENABLED = "true";
+    process.env.PYTHON_BACKEND_BLUEPRINT_ENABLED = "true";
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
+    process.env.PYTHON_BACKEND_API_KEY = "secret";
+
+    supabaseAuth.getUser.mockResolvedValueOnce({ data: { user: { id: "u1" } } });
+    let blueprintCall = 0;
+    let topicCall = 0;
+    const latestBlueprintBuilder = makeBuilder({ data: null, error: null });
+    const insertBlueprintBuilder = makeBuilder({ data: { id: "bp-1" }, error: null });
+
+    supabaseFromMock.mockImplementation((table: string) => {
+      if (table === "classes") {
+        return makeBuilder({
+          data: {
+            id: "class-1",
+            owner_id: "u1",
+            title: "Math",
+            subject: "Mathematics",
+            level: "College",
+          },
+          error: null,
+        });
+      }
+      if (table === "enrollments") {
+        return makeBuilder({ data: null, error: null });
+      }
+      if (table === "materials") {
+        return makeBuilder({
+          data: [{ id: "m1", title: "Lecture", extracted_text: "content", status: "ready" }],
+          error: null,
+        });
+      }
+      if (table === "blueprints") {
+        blueprintCall += 1;
+        if (blueprintCall === 1) {
+          return latestBlueprintBuilder;
+        }
+        return insertBlueprintBuilder;
+      }
+      if (table === "topics") {
+        topicCall += 1;
+        return makeBuilder({ data: { id: `topic-${topicCall}` }, error: null });
+      }
+      if (table === "objectives") {
+        return makeBuilder({ error: null });
+      }
+      if (table === "ai_requests") {
+        return makeBuilder({ error: null });
+      }
+      return makeBuilder({ data: null, error: null });
+    });
+
+    vi.mocked(retrieveMaterialContext).mockResolvedValue("context");
+    const fetchMock = vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      makeJsonResponse({
+        ok: true,
+        data: {
+          payload: {
+            schemaVersion: "v2",
+            summary: "Summary",
+            topics: [
+              {
+                key: "topic-1",
+                title: "Limits",
+                sequence: 1,
+                objectives: [{ statement: "Define limits." }],
+              },
+            ],
+          },
+          provider: "openai",
+          model: "gpt-test",
+          usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+          latency_ms: 42,
+        },
+      }),
+    );
+
+    await expectRedirect(
+      () => generateBlueprint("class-1"),
+      "/classes/class-1/blueprint?generated=1",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(generateTextWithFallback).not.toHaveBeenCalled();
+    expect(parseBlueprintResponse).not.toHaveBeenCalled();
+    expect(insertBlueprintBuilder.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content_json: expect.objectContaining({ summary: "Summary" }),
+        content_schema_version: "v2",
+      }),
+    );
+  });
 });
+
+function makeJsonResponse(payload: unknown, ok = true) {
+  return {
+    ok,
+    json: async () => payload,
+  } as Response;
+}
 
 describe("blueprint workflow actions", () => {
   beforeEach(() => {

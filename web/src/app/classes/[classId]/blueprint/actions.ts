@@ -10,6 +10,7 @@ import {
 } from "@/lib/ai/blueprint";
 import type { BloomLevel, BlueprintPayload, BlueprintTopic } from "@/lib/ai/blueprint";
 import { generateTextWithFallback } from "@/lib/ai/providers";
+import { generateBlueprintViaPythonBackend } from "@/lib/ai/python-blueprint";
 import { retrieveMaterialContext } from "@/lib/materials/retrieval";
 import { requireVerifiedUser } from "@/lib/auth/session";
 
@@ -55,6 +56,31 @@ function parseTimeoutMs(value: string | undefined, fallbackMs: number) {
     return fallbackMs;
   }
   return Math.floor(parsed);
+}
+
+function normalizeBooleanEnv(value: string | undefined, fallback: boolean) {
+  if (!value) {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+}
+
+function shouldUsePythonBlueprintBackend() {
+  return normalizeBooleanEnv(
+    process.env.PYTHON_BACKEND_BLUEPRINT_ENABLED ?? process.env.PYTHON_BACKEND_ENABLED,
+    false,
+  );
+}
+
+function isPythonBackendStrict() {
+  return normalizeBooleanEnv(process.env.PYTHON_BACKEND_STRICT, false);
 }
 
 function formatDuration(durationMs: number) {
@@ -664,29 +690,75 @@ export async function generateBlueprint(classId: string) {
     );
     return;
   }
-  const prompt = buildBlueprintPrompt({
-    classTitle: classRow.title,
-    subject: classRow.subject,
-    level: classRow.level,
-    materialCount: readyMaterials.length,
-    materialText,
-  });
-
   const start = Date.now();
   let blueprintId: string | null = null;
   let usedProvider: string | null = null;
+  let usedModel: string | null = null;
+  let usedUsage: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | undefined;
+  let usedLatencyMs: number | null = null;
   try {
     const generationTimeoutMs = requireRemainingBudget(startedAtMs);
-    const result = await generateTextWithFallback({
-      system: prompt.system,
-      user: prompt.user,
-      temperature: 0.2,
-      maxTokens: 8000,
-      timeoutMs: generationTimeoutMs,
-    });
-    usedProvider = result.provider;
-
-    const payload = parseBlueprintResponse(result.content);
+    let payload: BlueprintPayload;
+    if (shouldUsePythonBlueprintBackend()) {
+      try {
+        const pythonResult = await generateBlueprintViaPythonBackend({
+          classTitle: classRow.title,
+          subject: classRow.subject,
+          level: classRow.level,
+          materialCount: readyMaterials.length,
+          materialText,
+          timeoutMs: generationTimeoutMs,
+        });
+        payload = pythonResult.payload;
+        usedProvider = pythonResult.provider;
+        usedModel = pythonResult.model;
+        usedUsage = pythonResult.usage;
+        usedLatencyMs = pythonResult.latencyMs;
+      } catch (error) {
+        if (isPythonBackendStrict()) {
+          throw error;
+        }
+        const prompt = buildBlueprintPrompt({
+          classTitle: classRow.title,
+          subject: classRow.subject,
+          level: classRow.level,
+          materialCount: readyMaterials.length,
+          materialText,
+        });
+        const result = await generateTextWithFallback({
+          system: prompt.system,
+          user: prompt.user,
+          temperature: 0.2,
+          maxTokens: 8000,
+          timeoutMs: generationTimeoutMs,
+        });
+        usedProvider = result.provider;
+        usedModel = result.model;
+        usedUsage = result.usage;
+        usedLatencyMs = result.latencyMs;
+        payload = parseBlueprintResponse(result.content);
+      }
+    } else {
+      const prompt = buildBlueprintPrompt({
+        classTitle: classRow.title,
+        subject: classRow.subject,
+        level: classRow.level,
+        materialCount: readyMaterials.length,
+        materialText,
+      });
+      const result = await generateTextWithFallback({
+        system: prompt.system,
+        user: prompt.user,
+        temperature: 0.2,
+        maxTokens: 8000,
+        timeoutMs: generationTimeoutMs,
+      });
+      usedProvider = result.provider;
+      usedModel = result.model;
+      usedUsage = result.usage;
+      usedLatencyMs = result.latencyMs;
+      payload = parseBlueprintResponse(result.content);
+    }
 
     const { data: latestBlueprint } = await supabase
       .from("blueprints")
@@ -778,13 +850,13 @@ export async function generateBlueprint(classId: string) {
     await supabase.from("ai_requests").insert({
       class_id: classId,
       user_id: user.id,
-      provider: result.provider,
-      model: result.model,
+      provider: usedProvider ?? "unknown",
+      model: usedModel,
       purpose: BLUEPRINT_REQUEST_PURPOSE,
-      prompt_tokens: result.usage?.promptTokens ?? null,
-      completion_tokens: result.usage?.completionTokens ?? null,
-      total_tokens: result.usage?.totalTokens ?? null,
-      latency_ms: result.latencyMs,
+      prompt_tokens: usedUsage?.promptTokens ?? null,
+      completion_tokens: usedUsage?.completionTokens ?? null,
+      total_tokens: usedUsage?.totalTokens ?? null,
+      latency_ms: usedLatencyMs,
       status: "success",
     });
 
