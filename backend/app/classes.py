@@ -28,6 +28,7 @@ class ClassDomainError(RuntimeError):
 def create_class(settings: Settings, request: ClassCreateRequest) -> ClassCreateResult:
     _require_supabase_credentials(settings)
     timeout_seconds = max(5, settings.ai_request_timeout_ms / 1000)
+    base_url = _supabase_base_url(settings)
     with httpx.Client(timeout=timeout_seconds) as client:
         account_type = _load_account_type(client, settings, request.user_id)
         if account_type != "teacher":
@@ -37,7 +38,7 @@ def create_class(settings: Settings, request: ClassCreateRequest) -> ClassCreate
                 status_code=403,
             )
 
-        classes_url = f"{settings.supabase_url.rstrip('/')}/rest/v1/classes"
+        classes_url = f"{base_url}/rest/v1/classes"
         create_response = client.post(
             classes_url,
             headers={
@@ -68,7 +69,7 @@ def create_class(settings: Settings, request: ClassCreateRequest) -> ClassCreate
         if not class_id:
             raise RuntimeError("Supabase create class response did not include class id.")
 
-        enrollments_url = f"{settings.supabase_url.rstrip('/')}/rest/v1/enrollments?on_conflict=class_id,user_id"
+        enrollments_url = f"{base_url}/rest/v1/enrollments?on_conflict=class_id,user_id"
         enrollment_response = client.post(
             enrollments_url,
             headers={
@@ -93,6 +94,7 @@ def create_class(settings: Settings, request: ClassCreateRequest) -> ClassCreate
 def join_class(settings: Settings, request: ClassJoinRequest) -> ClassJoinResult:
     _require_supabase_credentials(settings)
     timeout_seconds = max(5, settings.ai_request_timeout_ms / 1000)
+    base_url = _supabase_base_url(settings)
     with httpx.Client(timeout=timeout_seconds) as client:
         account_type = _load_account_type(client, settings, request.user_id)
         if account_type != "student":
@@ -104,7 +106,7 @@ def join_class(settings: Settings, request: ClassJoinRequest) -> ClassJoinResult
 
         encoded_join_code = quote(request.join_code, safe="")
         classes_lookup_url = (
-            f"{settings.supabase_url.rstrip('/')}/rest/v1/classes"
+            f"{base_url}/rest/v1/classes"
             f"?select=id&join_code=ilike.{encoded_join_code}&limit=1"
         )
         class_lookup_response = client.get(
@@ -124,7 +126,7 @@ def join_class(settings: Settings, request: ClassJoinRequest) -> ClassJoinResult
                 status_code=404,
             )
 
-        enrollments_url = f"{settings.supabase_url.rstrip('/')}/rest/v1/enrollments?on_conflict=class_id,user_id"
+        enrollments_url = f"{base_url}/rest/v1/enrollments?on_conflict=class_id,user_id"
         enrollment_response = client.post(
             enrollments_url,
             headers={
@@ -150,9 +152,16 @@ def _require_supabase_credentials(settings: Settings) -> None:
         raise RuntimeError("Supabase service credentials are not configured on Python backend.")
 
 
+def _supabase_base_url(settings: Settings) -> str:
+    if not settings.supabase_url:
+        raise RuntimeError("Supabase service URL is not configured on Python backend.")
+    return settings.supabase_url.rstrip("/")
+
+
 def _load_account_type(client: httpx.Client, settings: Settings, user_id: str) -> str:
+    base_url = _supabase_base_url(settings)
     profile_url = (
-        f"{settings.supabase_url.rstrip('/')}/rest/v1/profiles"
+        f"{base_url}/rest/v1/profiles"
         f"?select=account_type&id=eq.{quote(user_id, safe='')}&limit=1"
     )
     response = client.get(
@@ -179,7 +188,8 @@ def _load_account_type(client: httpx.Client, settings: Settings, user_id: str) -
 
 
 def _rollback_created_class(client: httpx.Client, settings: Settings, class_id: str) -> None:
-    delete_url = f"{settings.supabase_url.rstrip('/')}/rest/v1/classes?id=eq.{quote(class_id, safe='')}"
+    base_url = _supabase_base_url(settings)
+    delete_url = f"{base_url}/rest/v1/classes?id=eq.{quote(class_id, safe='')}"
     try:
         client.delete(
             delete_url,

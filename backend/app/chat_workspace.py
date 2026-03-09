@@ -5,7 +5,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -16,6 +16,7 @@ from app.config import Settings
 from app.providers import generate_embeddings_with_fallback
 from app.schemas import (
     ChatGenerateRequest,
+    ChatTranscriptTurn,
     ChatWorkspaceMessageSendRequest,
     ChatWorkspaceMessagesListRequest,
     ChatWorkspaceParticipantsRequest,
@@ -118,7 +119,11 @@ def list_participants(settings: Settings, request: ChatWorkspaceParticipantsRequ
             failure_message="Failed to load class enrollments.",
         )
 
-        user_ids = [row.get("user_id") for row in enrollments if isinstance(row.get("user_id"), str)]
+        user_ids: list[str] = []
+        for row in enrollments:
+            user_id = row.get("user_id")
+            if isinstance(user_id, str):
+                user_ids.append(user_id)
         if not user_ids:
             return {"participants": []}
 
@@ -700,24 +705,23 @@ def _normalize_messages_chronological(rows: list[dict[str, Any]]) -> list[dict[s
     return normalized
 
 
-def _messages_to_transcript(rows: list[dict[str, Any]], max_turns: int) -> list[dict[str, str]]:
+def _messages_to_transcript(rows: list[dict[str, Any]], max_turns: int) -> list[ChatTranscriptTurn]:
     if max_turns <= 0:
         return []
 
-    transcript: list[dict[str, str]] = []
+    transcript: list[ChatTranscriptTurn] = []
     for row in rows[-max_turns:]:
         author_kind = str(row.get("author_kind") or "")
         content = str(row.get("content") or "").strip()
         created_at = str(row.get("created_at") or "").strip()
         if not content:
             continue
-        role = "assistant" if author_kind == "assistant" else "student"
         transcript.append(
-            {
-                "role": role,
-                "message": content,
-                "created_at": created_at or datetime.now(UTC).isoformat(),
-            }
+            ChatTranscriptTurn(
+                role="assistant" if author_kind == "assistant" else "student",
+                message=content,
+                created_at=created_at or datetime.now(UTC).isoformat(),
+            )
         )
     return transcript
 
@@ -928,7 +932,7 @@ def _retrieve_material_context(
         json={
             "p_class_id": class_id,
             "query_embedding": query_embedding,
-            "match_count": DEFAULT_MATCH_COUNT,
+            "match_count": DEFAULT_RAG_MATCH_COUNT,
         },
     )
     payload = _safe_json(response)
@@ -1258,7 +1262,12 @@ def _select_chronological_highlights(scored_turns: list[dict[str, Any]]) -> list
             str((item.get("message") or {}).get("id") or ""),
         )
     )
-    return [item.get("message") for item in top if isinstance(item.get("message"), dict)]
+    highlights: list[dict[str, Any]] = []
+    for item in top:
+        message = item.get("message")
+        if isinstance(message, dict):
+            highlights.append(cast(dict[str, Any], message))
+    return highlights
 
 
 def _merge_summary(
@@ -1291,9 +1300,11 @@ def _merge_summary(
             if term not in latest_query_set and len(term) < 4:
                 continue
             existing = merged_terms.get(term)
+            previous_weight = float(existing.get("weight") or 0.0) if existing else 0.0
+            previous_occurrences = _coerce_token_count(existing.get("occurrences")) if existing else 0
             merged_terms[term] = {
-                "weight": (existing.get("weight") if existing else 0.0) + 1.0,
-                "occurrences": (existing.get("occurrences") if existing else 0) + 1,
+                "weight": previous_weight + 1.0,
+                "occurrences": previous_occurrences + 1,
                 "lastSeen": created_at,
             }
 
@@ -1307,7 +1318,7 @@ def _merge_summary(
             }
             for term, value in merged_terms.items()
         ],
-        key=lambda item: (-item["weight"], -item["occurrences"]),
+        key=lambda item: (-cast(float, item["weight"]), -cast(int, item["occurrences"])),
     )[:MAX_KEY_TERMS]
 
     resolved_facts = _uniq(
@@ -1345,7 +1356,10 @@ def _merge_summary(
         ]
     )[-MAX_LIST_ITEMS:]
 
-    previous_timeline = previous.get("timeline") if isinstance(previous.get("timeline"), dict) else {}
+    previous_timeline_raw = previous.get("timeline")
+    previous_timeline: dict[str, Any] = (
+        cast(dict[str, Any], previous_timeline_raw) if isinstance(previous_timeline_raw, dict) else {}
+    )
     highlights = _uniq(
         [
             *(_as_string_list(previous_timeline.get("highlights"))),
@@ -1436,6 +1450,8 @@ def _client(settings: Settings) -> httpx.Client:
 
 
 def _rest_url(settings: Settings, table: str) -> str:
+    if not settings.supabase_url:
+        raise RuntimeError("Supabase service URL is not configured on Python backend.")
     return f"{settings.supabase_url.rstrip('/')}/rest/v1/{table}"
 
 

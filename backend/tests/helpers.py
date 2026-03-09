@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
+from typing import Any
+
 from app.config import Settings
 
 
-def make_settings(**overrides):
-    base = dict(
+def make_settings(**overrides: Any) -> Settings:
+    base = Settings(
         python_backend_api_key="test-key",
         python_backend_allow_unauthenticated_requests=False,
         ai_provider_default="openrouter",
@@ -29,5 +32,4 @@ def make_settings(**overrides):
         material_worker_batch=3,
         material_worker_function_url=None,
     )
-    base.update(overrides)
-    return Settings(**base)
+    return replace(base, **overrides)
