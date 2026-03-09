@@ -21,7 +21,8 @@ type PythonWorkspaceError = Error & {
   code?: string;
 };
 
-const DEFAULT_TIMEOUT_MS = 15000;
+const DEFAULT_MATERIAL_TIMEOUT_MS = 15000;
+const DEFAULT_CHAT_TIMEOUT_MS = 45000;
 
 export async function listWorkspaceParticipantsViaPython(input: {
   classId: string;
@@ -179,6 +180,7 @@ export async function sendWorkspaceMessageViaPython(input: {
   sessionId: string;
   message: string;
 }) {
+  const timeoutMs = resolvePythonBackendChatTimeoutMs();
   const payload = await postWorkspace<{
     response?: WorkspaceModelResponse;
     user_message?: WorkspaceMessageRow;
@@ -193,7 +195,8 @@ export async function sendWorkspaceMessageViaPython(input: {
     user_id: input.userId,
     session_id: input.sessionId,
     message: input.message,
-  });
+    timeout_ms: timeoutMs,
+  }, { timeoutMs });
 
   if (!payload.response || !payload.user_message || !payload.assistant_message) {
     throw new Error("Python workspace send response is invalid.");
@@ -211,21 +214,39 @@ export async function sendWorkspaceMessageViaPython(input: {
   };
 }
 
-function resolvePythonBackendTimeoutMs() {
-  const parsed = Number(process.env.PYTHON_BACKEND_MATERIAL_TIMEOUT_MS ?? String(DEFAULT_TIMEOUT_MS));
+function resolveTimeoutMs(rawValue: string | undefined, fallbackMs: number) {
+  const parsed = Number(rawValue ?? String(fallbackMs));
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    return DEFAULT_TIMEOUT_MS;
+    return fallbackMs;
   }
   return Math.floor(parsed);
 }
 
-async function postWorkspace<T>(path: string, body: Record<string, unknown>) {
+function resolvePythonBackendMaterialTimeoutMs() {
+  return resolveTimeoutMs(
+    process.env.PYTHON_BACKEND_MATERIAL_TIMEOUT_MS,
+    DEFAULT_MATERIAL_TIMEOUT_MS,
+  );
+}
+
+function resolvePythonBackendChatTimeoutMs() {
+  return resolveTimeoutMs(
+    process.env.PYTHON_BACKEND_CHAT_TIMEOUT_MS ?? process.env.AI_REQUEST_TIMEOUT_MS,
+    DEFAULT_CHAT_TIMEOUT_MS,
+  );
+}
+
+async function postWorkspace<T>(
+  path: string,
+  body: Record<string, unknown>,
+  options: { timeoutMs?: number } = {},
+) {
   const baseUrl = process.env.PYTHON_BACKEND_URL?.trim();
   if (!baseUrl) {
     throw new Error("PYTHON_BACKEND_URL is not configured.");
   }
   const apiKey = process.env.PYTHON_BACKEND_API_KEY?.trim();
-  const timeoutMs = resolvePythonBackendTimeoutMs();
+  const timeoutMs = options.timeoutMs ?? resolvePythonBackendMaterialTimeoutMs();
   let didTimeout = false;
   const controller = new AbortController();
   const timer = setTimeout(() => {

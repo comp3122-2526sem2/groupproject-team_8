@@ -104,10 +104,18 @@ def join_class(settings: Settings, request: ClassJoinRequest) -> ClassJoinResult
                 status_code=403,
             )
 
-        encoded_join_code = quote(request.join_code, safe="")
+        normalized_join_code = request.join_code.strip().upper()
+        if not normalized_join_code:
+            raise ClassDomainError(
+                message="Invalid join code.",
+                code="class_not_found",
+                status_code=404,
+            )
+
+        encoded_join_code = quote(normalized_join_code, safe="")
         classes_lookup_url = (
             f"{base_url}/rest/v1/classes"
-            f"?select=id&join_code=ilike.{encoded_join_code}&limit=1"
+            f"?select=id&join_code=eq.{encoded_join_code}&limit=1"
         )
         class_lookup_response = client.get(
             classes_lookup_url,
