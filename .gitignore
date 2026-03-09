@@ -39,6 +39,8 @@ output/
 dist/
 build/
 tmp/
+__pycache__/
+.pytest_cache/
 
 # Misc
 *.tsbuildinfo

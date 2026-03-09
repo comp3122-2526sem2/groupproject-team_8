@@ -1,5 +1,9 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { generateTextWithFallback, resolveProviderOrder } from "@/lib/ai/providers";
+import {
+  generateEmbeddingsWithFallback,
+  generateTextWithFallback,
+  resolveProviderOrder,
+} from "@/lib/ai/providers";
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -175,6 +179,120 @@ describe("generateTextWithFallback", () => {
 
     expect(result.provider).toBe("openai");
     expect(result.content).toBe('{"summary":"object-content","topics":[]}');
+  });
+
+  it("routes generation through python backend when enabled", async () => {
+    process.env.PYTHON_BACKEND_ENABLED = "true";
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
+
+    vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      makeJsonResponse({
+        ok: true,
+        data: {
+          provider: "openai",
+          model: "gpt-test",
+          content: '{"summary":"from-python","topics":[]}',
+          usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+          latency_ms: 42,
+        },
+        meta: { request_id: "req-1" },
+      }),
+    );
+
+    const result = await generateTextWithFallback({
+      system: "sys",
+      user: "user",
+    });
+
+    expect(result.provider).toBe("openai");
+    expect(result.model).toBe("gpt-test");
+    expect(result.usage?.totalTokens).toBe(3);
+  });
+
+  it("falls back to local provider when python backend fails and strict mode is disabled", async () => {
+    process.env.PYTHON_BACKEND_ENABLED = "true";
+    process.env.PYTHON_BACKEND_STRICT = "false";
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
+    process.env.OPENAI_API_KEY = "oa-key";
+    process.env.OPENAI_MODEL = "oa-model";
+
+    const fetchMock = vi.spyOn(global, "fetch");
+    fetchMock.mockResolvedValueOnce(
+      makeJsonResponse(
+        {
+          ok: false,
+          error: { message: "backend unavailable" },
+        },
+        false,
+      ),
+    );
+    fetchMock.mockResolvedValueOnce(
+      makeJsonResponse({
+        choices: [
+          {
+            message: {
+              content: '{"summary":"local-fallback","topics":[]}',
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await generateTextWithFallback({
+      system: "sys",
+      user: "user",
+    });
+
+    expect(result.provider).toBe("openai");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws when python backend fails in strict mode", async () => {
+    process.env.PYTHON_BACKEND_ENABLED = "true";
+    process.env.PYTHON_BACKEND_STRICT = "true";
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
+
+    vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      makeJsonResponse(
+        {
+          ok: false,
+          error: { message: "python backend hard fail" },
+        },
+        false,
+      ),
+    );
+
+    await expect(
+      generateTextWithFallback({
+        system: "sys",
+        user: "user",
+      }),
+    ).rejects.toThrow("python backend hard fail");
+  });
+});
+
+describe("generateEmbeddingsWithFallback", () => {
+  it("routes embeddings through python backend when enabled", async () => {
+    process.env.PYTHON_BACKEND_ENABLED = "true";
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
+
+    vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      makeJsonResponse({
+        ok: true,
+        data: {
+          provider: "openrouter",
+          model: "embed-model",
+          embeddings: [[0.1, 0.2]],
+          usage: { prompt_tokens: 10, completion_tokens: 0, total_tokens: 10 },
+          latency_ms: 25,
+        },
+      }),
+    );
+
+    const result = await generateEmbeddingsWithFallback({ inputs: ["hello"] });
+    expect(result.provider).toBe("openrouter");
+    expect(result.embeddings).toHaveLength(1);
+    expect(result.usage?.totalTokens).toBe(10);
   });
 });
 

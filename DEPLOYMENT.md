@@ -143,6 +143,13 @@ Legacy fallback names (optional):
 - `OPENROUTER_APP_NAME`
 - `OPENROUTER_BASE_URL` (optional; defaults to OpenRouter API)
 
+### Optional Python AI backend adapter
+
+- `PYTHON_BACKEND_ENABLED=false` (set `true` to route AI generation/embeddings via Python service)
+- `PYTHON_BACKEND_STRICT=false` (set `true` to fail fast instead of falling back to local Next adapters)
+- `PYTHON_BACKEND_URL` (for example `https://python-backend.example.com`)
+- `PYTHON_BACKEND_API_KEY` (if Python service requires API key auth)
+
 ### Material processing backend
 
 - `MATERIAL_WORKER_BACKEND=supabase` (default recommended)
@@ -152,6 +159,9 @@ Legacy fallback names (optional):
 
 - Pull requests -> Preview deployment (staging env vars)
 - Merge to `main` -> Production deployment (production env vars)
+
+If `PYTHON_BACKEND_ENABLED=true`, ensure preview deployments point to a preview/staging Python backend URL
+instead of production.
 
 ## 10. Configure Supabase Auth redirect URLs
 

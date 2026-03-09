@@ -97,6 +97,8 @@ Student Flow
 
 - Next.js App: UI, routing, and role based layouts.
 - API Layer: server actions or API routes for all data writes.
+- Python Backend (strangler path): optional internal AI orchestration service (`backend/`) with
+  deterministic envelopes (`{ ok, data, error, meta }`) consumed by Next via adapter flags.
 - AI Orchestrator: provider adapters, prompt templates, safety checks.
 - Supabase: Auth, Postgres, Storage, Row Level Security.
 
@@ -113,6 +115,9 @@ Student Flow
 **AI Provider Support**
 
 - OpenAI, Google Gemini, OpenRouter via a provider adapter interface.
+- Provider orchestration can run in either:
+  - Next server runtime (`web/src/lib/ai/providers.ts`)
+  - Python backend runtime (`backend/app/providers.py`) when `PYTHON_BACKEND_ENABLED=true`
 - Provider selection stored per class or per request.
 - All prompts and outputs are logged with metadata.
 

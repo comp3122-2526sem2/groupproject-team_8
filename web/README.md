@@ -44,6 +44,8 @@ pnpm dev
 - Disable Supabase phone auth provider (phone-based auth is intentionally out of scope).
 - Ensure the `materials` storage bucket exists for uploads.
 - Configure at least one AI provider with both a chat model and an embedding model.
+- Optional migration adapter: set `PYTHON_BACKEND_ENABLED=true` and `PYTHON_BACKEND_URL` to route
+  AI generation/embedding calls through the Python backend while preserving existing Next flows.
 - Default background ingestion backend is `MATERIAL_WORKER_BACKEND=supabase`, which enqueues jobs through Supabase `pgmq`.
 - Supabase Cron dispatches the `material-worker` Edge Function (configured by migration and Vault secrets).
 - `POST /api/materials/process` is a legacy fallback worker path when `MATERIAL_WORKER_BACKEND=legacy`.

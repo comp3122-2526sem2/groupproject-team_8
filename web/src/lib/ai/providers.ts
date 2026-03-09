@@ -1,5 +1,9 @@
 /// <reference types="node" />
 import "server-only";
+import {
+  generateEmbeddingsViaPythonBackend,
+  generateTextViaPythonBackend,
+} from "@/lib/ai/python-backend";
 
 export type AiProvider = "openrouter" | "openai" | "gemini";
 
@@ -61,6 +65,21 @@ export async function generateTextWithFallback(
   options: AiGenerateOptions,
 ): Promise<AiGenerateResult> {
   const totalTimeoutMs = resolveTimeoutMs(options.timeoutMs, DEFAULT_AI_REQUEST_TIMEOUT_MS);
+  if (shouldUsePythonBackend()) {
+    try {
+      return await generateTextViaPythonBackend({
+        ...options,
+        timeoutMs: totalTimeoutMs,
+        providerOrder: tryResolveProviderOrder(),
+        defaultProvider: normalizeProvider(process.env.AI_PROVIDER_DEFAULT ?? "openrouter") ?? undefined,
+      });
+    } catch (error) {
+      if (isPythonBackendStrict()) {
+        throw error;
+      }
+    }
+  }
+
   const deadline = Date.now() + totalTimeoutMs;
   const providers = resolveProviderOrder();
   const allowFallback = providers.length >= 2;
@@ -92,6 +111,21 @@ export async function generateEmbeddingsWithFallback(options: {
   timeoutMs?: number;
 }) {
   const totalTimeoutMs = resolveTimeoutMs(options.timeoutMs, DEFAULT_AI_EMBEDDING_TIMEOUT_MS);
+  if (shouldUsePythonBackend()) {
+    try {
+      return await generateEmbeddingsViaPythonBackend({
+        ...options,
+        timeoutMs: totalTimeoutMs,
+        providerOrder: tryResolveProviderOrder(),
+        defaultProvider: normalizeProvider(process.env.AI_PROVIDER_DEFAULT ?? "openrouter") ?? undefined,
+      });
+    } catch (error) {
+      if (isPythonBackendStrict()) {
+        throw error;
+      }
+    }
+  }
+
   const deadline = Date.now() + totalTimeoutMs;
   const providers = resolveProviderOrder().filter(isEmbeddingConfigured);
   if (providers.length === 0) {
@@ -123,6 +157,36 @@ function normalizeProvider(value: string): AiProvider | null {
     return value;
   }
   return null;
+}
+
+function tryResolveProviderOrder() {
+  try {
+    return resolveProviderOrder();
+  } catch {
+    return undefined;
+  }
+}
+
+function shouldUsePythonBackend() {
+  return normalizeBooleanEnv(process.env.PYTHON_BACKEND_ENABLED, false);
+}
+
+function isPythonBackendStrict() {
+  return normalizeBooleanEnv(process.env.PYTHON_BACKEND_STRICT, false);
+}
+
+function normalizeBooleanEnv(value: string | undefined, fallback: boolean) {
+  if (!value) {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return fallback;
 }
 
 function isProviderConfigured(provider: AiProvider) {
