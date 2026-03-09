@@ -104,8 +104,9 @@ Student Flow
     - quiz generation (`POST /v1/quiz/generate`)
     - flashcards generation (`POST /v1/flashcards/generate`)
     - grounded chat generation (`POST /v1/chat/generate`)
-      - includes reserved orchestration fields (`tool_mode`, `tool_catalog`, `orchestration_hints`)
-        for future LangGraph/tool-calling rollout without changing frontend contracts
+      - includes orchestration fields (`tool_mode`, `tool_catalog`, `orchestration_hints`)
+        and runtime metadata for LangGraph migration without changing frontend contracts
+      - phase 7 introduces optional `langgraph_v1` engine with safe fallback to `direct_v1`
 - AI Orchestrator: provider adapters, prompt templates, safety checks.
 - Supabase: Auth, Postgres, Storage, Row Level Security.
 

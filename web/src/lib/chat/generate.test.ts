@@ -51,6 +51,9 @@ describe("generateGroundedChatResponse", () => {
     delete process.env.PYTHON_BACKEND_ENABLED;
     delete process.env.PYTHON_BACKEND_CHAT_ENABLED;
     delete process.env.PYTHON_BACKEND_STRICT;
+    delete process.env.PYTHON_BACKEND_CHAT_ENGINE;
+    delete process.env.PYTHON_BACKEND_CHAT_TOOL_MODE;
+    delete process.env.PYTHON_BACKEND_CHAT_TOOL_CATALOG;
 
     const insertMock = vi.fn(async () => ({ error: null }));
     createServerSupabaseClient.mockResolvedValue({
@@ -105,8 +108,61 @@ describe("generateGroundedChatResponse", () => {
     });
 
     expect(generateChatViaPythonBackend).toHaveBeenCalledTimes(1);
+    expect(generateChatViaPythonBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolMode: "off",
+        toolCatalog: ["grounding_context.read"],
+        orchestrationHints: expect.objectContaining({
+          engine: "direct_v1",
+        }),
+      }),
+    );
     expect(generateTextWithFallback).not.toHaveBeenCalled();
     expect(parseChatModelResponse).not.toHaveBeenCalled();
+  });
+
+  it("passes langgraph engine and tool mode hints to python chat adapter when configured", async () => {
+    process.env.PYTHON_BACKEND_ENABLED = "true";
+    process.env.PYTHON_BACKEND_CHAT_ENABLED = "true";
+    process.env.PYTHON_BACKEND_CHAT_ENGINE = "langgraph_v1";
+    process.env.PYTHON_BACKEND_CHAT_TOOL_MODE = "plan";
+    process.env.PYTHON_BACKEND_CHAT_TOOL_CATALOG = "grounding_context.read,web.search";
+
+    generateChatViaPythonBackend.mockResolvedValue({
+      payload: {
+        safety: "ok",
+        answer: "Grounded response",
+        citations: [{ sourceLabel: "Source 1", rationale: "Based on class material." }],
+      },
+      provider: "openrouter",
+      model: "or-model",
+      usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
+      latencyMs: 15,
+      orchestration: {
+        engine: "langgraph_v1",
+        tool_mode: "plan",
+        tool_calls: [],
+      },
+    });
+
+    await generateGroundedChatResponse({
+      classId: "class-1",
+      classTitle: "Physics",
+      userId: "student-1",
+      userMessage: "Can we review kinematics?",
+      transcript: [],
+      purpose: "student_chat_open_v2",
+    });
+
+    expect(generateChatViaPythonBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolMode: "plan",
+        toolCatalog: ["grounding_context.read", "web.search"],
+        orchestrationHints: expect.objectContaining({
+          engine: "langgraph_v1",
+        }),
+      }),
+    );
   });
 
   it("falls back to local chat generation when python backend fails and strict mode is disabled", async () => {

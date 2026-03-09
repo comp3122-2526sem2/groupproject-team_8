@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from importlib import import_module
+from typing import Any, Callable, TypedDict
 
 from app.config import Settings
 from app.providers import generate_with_fallback
@@ -9,6 +10,22 @@ from app.schemas import ChatGenerateRequest, ChatGenerateResult, GenerateRequest
 
 GROUNDING_MODE = "balanced"
 DEFAULT_CHAT_MAX_TOKENS = 9000
+DEFAULT_CHAT_ENGINE = "direct_v1"
+LANGGRAPH_CHAT_ENGINE = "langgraph_v1"
+DEFAULT_TOOL_CATALOG = ["grounding_context.read"]
+
+
+class LangGraphChatState(TypedDict, total=False):
+    prompt_system: str
+    prompt_user: str
+    planned_tool_calls: list[dict[str, Any]]
+    tool_outputs: list[dict[str, Any]]
+    orchestration_notes: list[str]
+    llm_content: str
+    provider: str
+    model: str
+    usage: dict[str, Any] | None
+    latency_ms: int
 
 
 def generate_chat(settings: Settings, request: ChatGenerateRequest) -> ChatGenerateResult:
@@ -21,7 +38,30 @@ def generate_chat(settings: Settings, request: ChatGenerateRequest) -> ChatGener
         compacted_memory_context=request.compacted_memory_context,
         assignment_instructions=request.assignment_instructions,
     )
+    orchestration_engine = resolve_chat_engine(request.orchestration_hints)
+    if orchestration_engine == LANGGRAPH_CHAT_ENGINE:
+        langgraph_result = generate_chat_with_langgraph(settings, request, prompt)
+        if langgraph_result is not None:
+            return langgraph_result
 
+    return generate_chat_direct(
+        settings,
+        request,
+        prompt,
+        engine=DEFAULT_CHAT_ENGINE,
+        notes=["Reserved for LangGraph/tool-calling orchestration in later phases."],
+    )
+
+
+def generate_chat_direct(
+    settings: Settings,
+    request: ChatGenerateRequest,
+    prompt: dict[str, str],
+    *,
+    engine: str,
+    notes: list[str] | None = None,
+    planned_tool_calls: list[dict[str, Any]] | None = None,
+) -> ChatGenerateResult:
     result = generate_with_fallback(
         settings,
         GenerateRequest(
@@ -41,13 +81,191 @@ def generate_chat(settings: Settings, request: ChatGenerateRequest) -> ChatGener
         usage=result.usage,
         latency_ms=result.latency_ms,
         orchestration={
-            "engine": "direct_v1",
+            "engine": engine,
             "tool_mode": request.tool_mode,
-            "tool_calls": [],
-            "tool_catalog": request.tool_catalog or [],
-            "notes": "Reserved for LangGraph/tool-calling orchestration in later phases.",
+            "tool_calls": planned_tool_calls or [],
+            "tool_catalog": request.tool_catalog or DEFAULT_TOOL_CATALOG,
+            "notes": "; ".join(notes or []),
         },
     )
+
+
+def generate_chat_with_langgraph(
+    settings: Settings,
+    request: ChatGenerateRequest,
+    prompt: dict[str, str],
+) -> ChatGenerateResult | None:
+    graph_parts = load_langgraph_runtime()
+    if graph_parts is None:
+        return generate_chat_direct(
+            settings,
+            request,
+            prompt,
+            engine=DEFAULT_CHAT_ENGINE,
+            notes=["LangGraph is unavailable. Falling back to direct_v1."],
+        )
+
+    StateGraph, start, end = graph_parts
+    tool_catalog = request.tool_catalog or DEFAULT_TOOL_CATALOG
+
+    def plan_tools_node(state: LangGraphChatState) -> dict[str, Any]:
+        notes = list(state.get("orchestration_notes") or [])
+        planned_calls: list[dict[str, Any]] = []
+        tool_outputs: list[dict[str, Any]] = []
+        if request.tool_mode == "off":
+            notes.append("Tool mode is off; skipping planning.")
+            return {
+                "planned_tool_calls": planned_calls,
+                "tool_outputs": tool_outputs,
+                "orchestration_notes": notes,
+            }
+
+        if "grounding_context.read" in tool_catalog:
+            planned_calls.append(
+                {
+                    "name": "grounding_context.read",
+                    "arguments": {
+                        "sources": ["blueprint_context", "material_context"],
+                        "max_chars": 2500,
+                    },
+                }
+            )
+            tool_outputs.append(
+                {
+                    "name": "grounding_context.read",
+                    "output": {
+                        "blueprint_context": request.blueprint_context[:2500],
+                        "material_context": request.material_context[:2500],
+                    },
+                }
+            )
+            notes.append("Planned grounding_context.read before answer synthesis.")
+        else:
+            notes.append("No compatible tools in catalog; proceeding without tool execution.")
+
+        return {
+            "planned_tool_calls": planned_calls,
+            "tool_outputs": tool_outputs,
+            "orchestration_notes": notes,
+        }
+
+    def call_model_node(state: LangGraphChatState) -> dict[str, Any]:
+        tool_outputs = state.get("tool_outputs") or []
+        user_prompt = state["prompt_user"]
+        if tool_outputs:
+            user_prompt = "\n".join(
+                [
+                    user_prompt,
+                    "",
+                    "Tool outputs (JSON):",
+                    json.dumps(tool_outputs, ensure_ascii=True),
+                ]
+            )
+
+        result = generate_with_fallback(
+            settings,
+            GenerateRequest(
+                system=state["prompt_system"],
+                user=user_prompt,
+                temperature=0.2,
+                max_tokens=request.max_tokens or DEFAULT_CHAT_MAX_TOKENS,
+                timeout_ms=request.timeout_ms,
+                session_id=request.session_id,
+            ),
+        )
+        return {
+            "llm_content": result.content,
+            "provider": result.provider,
+            "model": result.model,
+            "usage": result.usage.model_dump() if result.usage else None,
+            "latency_ms": result.latency_ms,
+        }
+
+    workflow = StateGraph(LangGraphChatState)
+    workflow.add_node("plan_tools", cast_callable(plan_tools_node))
+    workflow.add_node("call_model", cast_callable(call_model_node))
+    workflow.add_edge(start, "plan_tools")
+    workflow.add_edge("plan_tools", "call_model")
+    workflow.add_edge("call_model", end)
+
+    chain = workflow.compile()
+    final_state = chain.invoke(
+        {
+            "prompt_system": prompt["system"],
+            "prompt_user": prompt["user"],
+            "planned_tool_calls": [],
+            "tool_outputs": [],
+            "orchestration_notes": ["LangGraph orchestration active."],
+        }
+    )
+
+    content = normalize_text(final_state.get("llm_content"))
+    if not content:
+        raise RuntimeError("LangGraph chat flow did not produce model output.")
+
+    payload = parse_chat_response(content)
+    usage_payload = final_state.get("usage")
+    return ChatGenerateResult(
+        payload=payload,
+        provider=normalize_provider(final_state.get("provider")),
+        model=normalize_model(final_state.get("model")),
+        usage=usage_payload if isinstance(usage_payload, dict) else None,
+        latency_ms=normalize_latency(final_state.get("latency_ms")),
+        orchestration={
+            "engine": LANGGRAPH_CHAT_ENGINE,
+            "tool_mode": request.tool_mode,
+            "tool_calls": final_state.get("planned_tool_calls") or [],
+            "tool_catalog": tool_catalog,
+            "notes": "; ".join(final_state.get("orchestration_notes") or []),
+        },
+    )
+
+
+def resolve_chat_engine(orchestration_hints: dict[str, Any] | None) -> str:
+    if not isinstance(orchestration_hints, dict):
+        return DEFAULT_CHAT_ENGINE
+    engine = orchestration_hints.get("engine")
+    if engine == LANGGRAPH_CHAT_ENGINE:
+        return LANGGRAPH_CHAT_ENGINE
+    return DEFAULT_CHAT_ENGINE
+
+
+def load_langgraph_runtime() -> tuple[Any, Any, Any] | None:
+    try:
+        module = import_module("langgraph.graph")
+    except ImportError:
+        return None
+
+    state_graph = getattr(module, "StateGraph", None)
+    start = getattr(module, "START", None)
+    end = getattr(module, "END", None)
+    if state_graph is None or start is None or end is None:
+        return None
+    return state_graph, start, end
+
+
+def cast_callable(
+    fn: Callable[[LangGraphChatState], dict[str, Any]],
+) -> Callable[..., dict[str, Any]]:
+    return fn
+
+
+def normalize_provider(value: Any) -> str:
+    provider = normalize_text(value)
+    if provider in {"openrouter", "openai", "gemini"}:
+        return provider
+    return "openrouter"
+
+
+def normalize_model(value: Any) -> str:
+    model = normalize_text(value)
+    return model or "unknown"
+
+
+def normalize_latency(value: Any) -> int:
+    if isinstance(value, int) and value >= 0:
+        return value
+    return 0
 
 
 def build_chat_prompt(

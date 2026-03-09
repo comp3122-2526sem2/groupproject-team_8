@@ -13,6 +13,8 @@ fallback and deterministic response envelopes.
 - `POST /v1/quiz/generate` (domain endpoint for quiz AI generation)
 - `POST /v1/flashcards/generate` (domain endpoint for flashcards AI generation)
 - `POST /v1/chat/generate` (domain endpoint for grounded chat AI generation)
+  - supports `direct_v1` and optional `langgraph_v1` orchestration via request hints
+  - install `langgraph` in the backend env to activate `langgraph_v1`; otherwise it falls back to `direct_v1`
 
 Response envelope:
 

@@ -125,6 +125,34 @@ function isPythonBackendStrict() {
   return normalizeBooleanEnv(process.env.PYTHON_BACKEND_STRICT, false);
 }
 
+function resolvePythonChatEngine() {
+  const value = process.env.PYTHON_BACKEND_CHAT_ENGINE?.trim().toLowerCase();
+  if (value === "langgraph_v1") {
+    return "langgraph_v1";
+  }
+  return "direct_v1";
+}
+
+function resolvePythonChatToolMode() {
+  const value = process.env.PYTHON_BACKEND_CHAT_TOOL_MODE?.trim().toLowerCase();
+  if (value === "plan" || value === "auto") {
+    return value;
+  }
+  return "off";
+}
+
+function resolvePythonChatToolCatalog() {
+  const raw = process.env.PYTHON_BACKEND_CHAT_TOOL_CATALOG;
+  if (!raw) {
+    return ["grounding_context.read"];
+  }
+  const catalog = raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return catalog.length > 0 ? catalog : ["grounding_context.read"];
+}
+
 function toFriendlyChatGenerationError(error: unknown) {
   if (!(error instanceof Error)) {
     return "Unable to generate a chat response right now. Please try again.";
@@ -183,6 +211,9 @@ export async function generateGroundedChatResponse(input: {
       assignmentInstructions: input.assignmentInstructions,
     });
     const maxTokens = resolveChatMaxTokens();
+    const pythonChatEngine = resolvePythonChatEngine();
+    const pythonChatToolMode = resolvePythonChatToolMode();
+    const pythonChatToolCatalog = resolvePythonChatToolCatalog();
     let parsed: ChatModelResponse;
     if (shouldUsePythonChatBackend()) {
       try {
@@ -197,10 +228,11 @@ export async function generateGroundedChatResponse(input: {
           purpose: input.purpose,
           sessionId: input.sessionId,
           maxTokens,
-          toolMode: "off",
-          toolCatalog: [],
+          toolMode: pythonChatToolMode,
+          toolCatalog: pythonChatToolCatalog,
           orchestrationHints: {
-            phase: "phase_6_chat_domain",
+            phase: "phase_7_langgraph_orchestration",
+            engine: pythonChatEngine,
             reserved_for: "langgraph_tool_calling",
           },
         });
