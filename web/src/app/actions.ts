@@ -1,9 +1,11 @@
 "use server";
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { validatePasswordPolicy } from "@/lib/auth/password-policy";
 import { redirect } from "next/navigation";
+
+const DUPLICATE_SIGN_UP_ERROR_MESSAGE =
+  "We couldn't create an account with that email. Try signing in or resetting your password.";
 
 function getFormValue(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -76,24 +78,6 @@ export async function signUp(formData: FormData) {
     redirect(`/register?error=${encodeURIComponent(passwordValidation.message)}`);
   }
 
-  const adminSupabase = createAdminSupabaseClient();
-  const { data: existingUser, error: existingUserError } = await adminSupabase
-    .schema("auth")
-    .from("users")
-    .select("id")
-    .eq("email", email)
-    .maybeSingle<{ id: string }>();
-
-  if (existingUserError) {
-    redirect(
-      `/register?error=${encodeURIComponent("Unable to verify existing account. Please try again.")}`,
-    );
-  }
-
-  if (existingUser?.id) {
-    redirect(`/register?error=${encodeURIComponent("Email already registered")}`);
-  }
-
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.auth.signUp({
     email,
@@ -103,7 +87,7 @@ export async function signUp(formData: FormData) {
 
   if (error) {
     const msg = isEmailAlreadyRegisteredError(error)
-      ? "Email already registered"
+      ? DUPLICATE_SIGN_UP_ERROR_MESSAGE
       : error.message;
 
     redirect(`/register?error=${encodeURIComponent(msg)}`);

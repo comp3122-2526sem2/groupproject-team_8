@@ -17,29 +17,9 @@ const supabaseAuth = {
   signOut: vi.fn(),
 };
 
-const adminMaybeSingle = vi.fn();
-const adminEq = vi.fn(() => ({
-  maybeSingle: adminMaybeSingle,
-}));
-const adminSelect = vi.fn(() => ({
-  eq: adminEq,
-}));
-const adminFrom = vi.fn(() => ({
-  select: adminSelect,
-}));
-const adminSchema = vi.fn(() => ({
-  from: adminFrom,
-}));
-
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: () => ({
     auth: supabaseAuth,
-  }),
-}));
-
-vi.mock("@/lib/supabase/admin", () => ({
-  createAdminSupabaseClient: () => ({
-    schema: adminSchema,
   }),
 }));
 
@@ -59,7 +39,6 @@ async function expectRedirect(action: () => Promise<void> | void, path: string) 
 describe("auth actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    adminMaybeSingle.mockResolvedValue({ data: null, error: null });
   });
 
   it("redirects to login with error on failed sign in", async () => {
@@ -86,26 +65,9 @@ describe("auth actions", () => {
     expect(redirect).toHaveBeenCalled();
   });
 
-  it("short-circuits sign up when email is already registered", async () => {
-    adminMaybeSingle.mockResolvedValueOnce({ data: { id: "user-1" }, error: null });
-
-    const formData = new FormData();
-    formData.set("email", "test@example.com");
-    formData.set("password", "goodpass1");
-    formData.set("account_type", "teacher");
-
-    await expectRedirect(
-      () => signUp(formData),
-      "/register?error=Email%20already%20registered",
-    );
-    expect(redirect).toHaveBeenCalled();
-    expect(supabaseAuth.signUp).not.toHaveBeenCalled();
-  });
-
-  it("redirects to register when admin lookup fails", async () => {
-    adminMaybeSingle.mockResolvedValueOnce({
-      data: null,
-      error: { message: "temporary admin error" },
+  it("falls back to the raw sign up error for non-duplicate failures", async () => {
+    supabaseAuth.signUp.mockResolvedValueOnce({
+      error: { message: "Unexpected auth failure" },
     });
 
     const formData = new FormData();
@@ -115,12 +77,12 @@ describe("auth actions", () => {
 
     await expectRedirect(
       () => signUp(formData),
-      "/register?error=Unable%20to%20verify%20existing%20account.%20Please%20try%20again.",
+      "/register?error=Unexpected%20auth%20failure",
     );
-    expect(supabaseAuth.signUp).not.toHaveBeenCalled();
+    expect(redirect).toHaveBeenCalled();
   });
 
-  it("maps stable duplicate error code from sign up to friendly message", async () => {
+  it("maps stable duplicate error code from sign up to a generic recovery hint", async () => {
     supabaseAuth.signUp.mockResolvedValueOnce({
       error: {
         message: "Database conflict",
@@ -135,7 +97,7 @@ describe("auth actions", () => {
 
     await expectRedirect(
       () => signUp(formData),
-      "/register?error=Email%20already%20registered",
+      "/register?error=We%20couldn't%20create%20an%20account%20with%20that%20email.%20Try%20signing%20in%20or%20resetting%20your%20password.",
     );
   });
 
