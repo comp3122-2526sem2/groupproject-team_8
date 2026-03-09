@@ -2,6 +2,7 @@
 
 import crypto from "node:crypto";
 import { redirect } from "next/navigation";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { generateJoinCode } from "@/lib/join-code";
 import {
   ALLOWED_EXTENSIONS,
@@ -10,6 +11,11 @@ import {
   detectMaterialKind,
   sanitizeFilename,
 } from "@/lib/materials/extract-text";
+import {
+  isPythonOnlyMode,
+  resolvePythonBackendEnabled,
+  resolvePythonBackendStrict,
+} from "@/lib/ai/python-migration";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { requireVerifiedUser } from "@/lib/auth/session";
 
@@ -28,16 +34,27 @@ function redirectWithError(path: string, message: string) {
 const MAX_JOIN_CODE_ATTEMPTS = 5;
 const MATERIALS_BUCKET = "materials";
 
+type PythonClassApiError = Error & {
+  code?: string;
+};
+
+function shouldUsePythonClassesBackend() {
+  return resolvePythonBackendEnabled(process.env.PYTHON_BACKEND_CLASSES_ENABLED);
+}
+
 function resolveMaterialWorkerBackend() {
-  return (process.env.MATERIAL_WORKER_BACKEND ?? "supabase").toLowerCase();
+  if (isPythonOnlyMode()) {
+    return "python";
+  }
+  const configured = (process.env.MATERIAL_WORKER_BACKEND ?? "").trim().toLowerCase();
+  if (configured === "python" || configured === "supabase" || configured === "legacy") {
+    return configured;
+  }
+  return "supabase";
 }
 
 function isPythonBackendStrict() {
-  const raw = process.env.PYTHON_BACKEND_STRICT;
-  if (!raw) {
-    return false;
-  }
-  return ["1", "true", "yes", "on"].includes(raw.trim().toLowerCase());
+  return resolvePythonBackendStrict();
 }
 
 function resolvePythonBackendTimeoutMs() {
@@ -110,6 +127,141 @@ async function dispatchMaterialJobViaPythonBackend(input: {
   }
 }
 
+async function createClassViaPythonBackend(input: {
+  userId: string;
+  title: string;
+  description?: string | null;
+  subject?: string | null;
+  level?: string | null;
+  joinCode: string;
+}) {
+  const baseUrl = process.env.PYTHON_BACKEND_URL?.trim();
+  if (!baseUrl) {
+    throw new Error("PYTHON_BACKEND_URL is not configured.");
+  }
+
+  const apiKey = process.env.PYTHON_BACKEND_API_KEY?.trim();
+  const timeoutMs = resolvePythonBackendTimeoutMs();
+  let didTimeout = false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    didTimeout = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/v1/classes/create`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(apiKey ? { "x-api-key": apiKey } : {}),
+      },
+      body: JSON.stringify({
+        user_id: input.userId,
+        title: input.title,
+        description: input.description ?? null,
+        subject: input.subject ?? null,
+        level: input.level ?? null,
+        join_code: input.joinCode,
+      }),
+      signal: controller.signal,
+    });
+
+    const payload = (await safePythonClassJson(response)) as {
+      ok?: boolean;
+      data?: { class_id?: string };
+      error?: { message?: string; code?: string };
+    } | null;
+
+    if (!response.ok || !payload?.ok || !payload.data?.class_id) {
+      const error = new Error(
+        payload?.error?.message ?? `Python backend class create failed with status ${response.status}.`,
+      ) as PythonClassApiError;
+      error.code = payload?.error?.code;
+      throw error;
+    }
+
+    return payload.data.class_id;
+  } catch (error) {
+    if (didTimeout || (error instanceof Error && error.name === "AbortError")) {
+      const timeoutError = new Error(
+        `Python backend class create timed out after ${timeoutMs}ms.`,
+      ) as PythonClassApiError;
+      timeoutError.code = "timeout";
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function joinClassViaPythonBackend(input: { userId: string; joinCode: string }) {
+  const baseUrl = process.env.PYTHON_BACKEND_URL?.trim();
+  if (!baseUrl) {
+    throw new Error("PYTHON_BACKEND_URL is not configured.");
+  }
+
+  const apiKey = process.env.PYTHON_BACKEND_API_KEY?.trim();
+  const timeoutMs = resolvePythonBackendTimeoutMs();
+  let didTimeout = false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    didTimeout = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/v1/classes/join`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(apiKey ? { "x-api-key": apiKey } : {}),
+      },
+      body: JSON.stringify({
+        user_id: input.userId,
+        join_code: input.joinCode,
+      }),
+      signal: controller.signal,
+    });
+
+    const payload = (await safePythonClassJson(response)) as {
+      ok?: boolean;
+      data?: { class_id?: string };
+      error?: { message?: string; code?: string };
+    } | null;
+
+    if (!response.ok || !payload?.ok || !payload.data?.class_id) {
+      const error = new Error(
+        payload?.error?.message ?? `Python backend class join failed with status ${response.status}.`,
+      ) as PythonClassApiError;
+      error.code = payload?.error?.code;
+      throw error;
+    }
+
+    return payload.data.class_id;
+  } catch (error) {
+    if (didTimeout || (error instanceof Error && error.name === "AbortError")) {
+      const timeoutError = new Error(
+        `Python backend class join timed out after ${timeoutMs}ms.`,
+      ) as PythonClassApiError;
+      timeoutError.code = "timeout";
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function safePythonClassJson(response: Response) {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
 async function requireTeacherAccess(
   classId: string,
   userId: string,
@@ -158,33 +310,53 @@ export async function createClass(formData: FormData) {
     redirectWithError("/classes/new", "Class title is required");
   }
 
-  const { supabase } = await requireVerifiedUser({ accountType: "teacher" });
+  const { supabase, user } = await requireVerifiedUser({ accountType: "teacher" });
 
   let newClassId: string | null = null;
 
   for (let attempt = 0; attempt < MAX_JOIN_CODE_ATTEMPTS; attempt += 1) {
     const joinCode = generateJoinCode();
-    const { data, error } = await supabase.rpc("create_class", {
-      p_title: title,
-      p_description: description || null,
-      p_subject: subject || null,
-      p_level: level || null,
-      p_join_code: joinCode,
-    });
-
-    if (!error && data) {
-      newClassId = data;
-      break;
-    }
-
-    if (error) {
-      if (error.code !== "23505") {
-        redirectWithError("/classes/new", error.message);
+    if (shouldUsePythonClassesBackend()) {
+      try {
+        newClassId = await createClassViaPythonBackend({
+          userId: user.id,
+          title,
+          description: description || null,
+          subject: subject || null,
+          level: level || null,
+          joinCode,
+        });
+        break;
+      } catch (error) {
+        const pythonError = error as PythonClassApiError;
+        if (pythonError.code === "join_code_conflict") {
+          continue;
+        }
+        redirectWithError("/classes/new", pythonError.message || "Failed to create class.");
       }
-      continue;
-    }
+    } else {
+      const { data, error } = await supabase.rpc("create_class", {
+        p_title: title,
+        p_description: description || null,
+        p_subject: subject || null,
+        p_level: level || null,
+        p_join_code: joinCode,
+      });
 
-    redirectWithError("/classes/new", "Unexpected response from database");
+      if (!error && data) {
+        newClassId = data;
+        break;
+      }
+
+      if (error) {
+        if (error.code !== "23505") {
+          redirectWithError("/classes/new", error.message);
+        }
+        continue;
+      }
+
+      redirectWithError("/classes/new", "Unexpected response from database");
+    }
   }
 
   if (!newClassId) {
@@ -201,7 +373,29 @@ export async function joinClass(formData: FormData) {
     redirectWithError("/join", "Join code is required");
   }
 
-  const { supabase } = await requireVerifiedUser({ accountType: "student" });
+  const { supabase, user } = await requireVerifiedUser({ accountType: "student" });
+
+  if (shouldUsePythonClassesBackend()) {
+    try {
+      const classId = await joinClassViaPythonBackend({
+        userId: user.id,
+        joinCode,
+      });
+      redirect(`/classes/${classId}`);
+      return;
+    } catch (error) {
+      if (isRedirectError(error)) {
+        throw error;
+      }
+      const pythonError = error as PythonClassApiError;
+      if (pythonError.code === "class_not_found") {
+        redirectWithError("/join", "Invalid join code");
+        return;
+      }
+      redirectWithError("/join", pythonError.message || "Unable to join class.");
+      return;
+    }
+  }
 
   const { data: classId, error } = await supabase.rpc("join_class_by_code", {
     code: joinCode,

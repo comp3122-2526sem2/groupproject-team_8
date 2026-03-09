@@ -1,6 +1,7 @@
 import "server-only";
 
 import { generateTextWithFallback } from "@/lib/ai/providers";
+import { resolvePythonBackendEnabled, resolvePythonBackendStrict } from "@/lib/ai/python-migration";
 import { generateChatViaPythonBackend } from "@/lib/ai/python-chat";
 import { buildChatPrompt, loadPublishedBlueprintContext } from "@/lib/chat/context";
 import type { ChatModelResponse, ChatTurn } from "@/lib/chat/types";
@@ -100,29 +101,14 @@ function resolveChatMaxTokens() {
   return Math.floor(parsed);
 }
 
-function normalizeBooleanEnv(value: string | undefined, fallback: boolean) {
-  if (!value) {
-    return fallback;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) {
-    return true;
-  }
-  if (["0", "false", "no", "off"].includes(normalized)) {
-    return false;
-  }
-  return fallback;
-}
-
 function shouldUsePythonChatBackend() {
-  return normalizeBooleanEnv(
+  return resolvePythonBackendEnabled(
     process.env.PYTHON_BACKEND_CHAT_ENABLED ?? process.env.PYTHON_BACKEND_ENABLED,
-    false,
   );
 }
 
 function isPythonBackendStrict() {
-  return normalizeBooleanEnv(process.env.PYTHON_BACKEND_STRICT, false);
+  return resolvePythonBackendStrict();
 }
 
 function resolvePythonChatEngine() {
@@ -218,6 +204,8 @@ export async function generateGroundedChatResponse(input: {
     if (shouldUsePythonChatBackend()) {
       try {
         const pythonResult = await generateChatViaPythonBackend({
+          classId: input.classId,
+          userId: input.userId,
           classTitle: input.classTitle,
           userMessage: input.userMessage,
           transcript: input.transcript,

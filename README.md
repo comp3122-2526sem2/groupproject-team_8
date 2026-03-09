@@ -93,6 +93,7 @@ git push org HEAD
 - Set Vault secrets `project_url` and `material_worker_token` in Supabase for worker dispatch auth.
 - Configure provider-specific embedding models so background material processing can complete.
 - `POST /api/materials/process` remains available as a legacy fallback path when `MATERIAL_WORKER_BACKEND=legacy`.
+- `PYTHON_BACKEND_MODE=python_only` can be used to enforce Python backend routing during migration hardening.
 
 **Docs**
 

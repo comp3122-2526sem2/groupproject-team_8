@@ -107,6 +107,7 @@ describe("class actions", () => {
     delete process.env.PYTHON_BACKEND_URL;
     delete process.env.PYTHON_BACKEND_API_KEY;
     delete process.env.PYTHON_BACKEND_STRICT;
+    delete process.env.PYTHON_BACKEND_MODE;
     vi.mocked(requireVerifiedUser).mockResolvedValue({
       supabase: {
         from: supabaseFromMock,
@@ -155,6 +156,63 @@ describe("class actions", () => {
 
     await expectRedirect(() => createClass(formData), "/classes/class-1");
     expect(redirect).toHaveBeenCalled();
+  });
+
+  it("creates a class via python backend when PYTHON_BACKEND_MODE=python_only", async () => {
+    process.env.PYTHON_BACKEND_MODE = "python_only";
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
+    process.env.PYTHON_BACKEND_API_KEY = "test-key";
+    vi.mocked(generateJoinCode).mockReturnValue("JOIN01");
+
+    const fetchMock = vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          data: { class_id: "class-python-1" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const formData = new FormData();
+    formData.set("title", "Physics");
+
+    await expectRedirect(() => createClass(formData), "/classes/class-python-1");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(supabaseRpcMock).not.toHaveBeenCalledWith("create_class", expect.anything());
+  });
+
+  it("retries python class creation when join code collides", async () => {
+    process.env.PYTHON_BACKEND_MODE = "python_only";
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
+    vi.mocked(generateJoinCode).mockReturnValueOnce("JOIN01").mockReturnValueOnce("JOIN02");
+
+    const fetchMock = vi.spyOn(global, "fetch");
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ok: false,
+          error: { message: "Join code already exists.", code: "join_code_conflict" },
+        }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          data: { class_id: "class-python-2" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const formData = new FormData();
+    formData.set("title", "Chemistry");
+
+    await expectRedirect(() => createClass(formData), "/classes/class-python-2");
+    expect(generateJoinCode).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("retries after join code collision and succeeds", async () => {
@@ -229,6 +287,49 @@ describe("class actions", () => {
 
     await expectRedirect(() => joinClass(formData), "/classes/class-2");
     expect(redirect).toHaveBeenCalled();
+  });
+
+  it("joins a class via python backend when PYTHON_BACKEND_MODE=python_only", async () => {
+    process.env.PYTHON_BACKEND_MODE = "python_only";
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
+    process.env.PYTHON_BACKEND_API_KEY = "test-key";
+
+    const fetchMock = vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          data: { class_id: "class-python-join" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const formData = new FormData();
+    formData.set("join_code", "AB12CD");
+
+    await expectRedirect(() => joinClass(formData), "/classes/class-python-join");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(supabaseRpcMock).not.toHaveBeenCalledWith("join_class_by_code", expect.anything());
+  });
+
+  it("keeps invalid join code UX when python backend returns class_not_found", async () => {
+    process.env.PYTHON_BACKEND_MODE = "python_only";
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
+
+    vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ok: false,
+          error: { message: "Invalid join code.", code: "class_not_found" },
+        }),
+        { status: 404, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const formData = new FormData();
+    formData.set("join_code", "BAD123");
+
+    await expectRedirect(() => joinClass(formData), "/join?error=Invalid%20join%20code");
   });
 
   it("rejects upload when file is missing", async () => {
@@ -384,6 +485,98 @@ describe("class actions", () => {
       "enqueue_material_job",
       expect.anything(),
     );
+  });
+
+  it("dispatches worker through python backend when PYTHON_BACKEND_MODE=python_only", async () => {
+    process.env.PYTHON_BACKEND_MODE = "python_only";
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
+    process.env.PYTHON_BACKEND_API_KEY = "test-key";
+
+    const file = new File([Buffer.from("hello")], "lecture.pdf", {
+      type: "application/pdf",
+    });
+    const formData = new FormData();
+    formData.set("file", file);
+    formData.set("title", "Lecture 1");
+
+    vi.mocked(detectMaterialKind).mockReturnValue("pdf");
+    vi.mocked(sanitizeFilename).mockReturnValue("lecture.pdf");
+
+    const fetchMock = vi.spyOn(global, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ok: true, data: { enqueued: true, triggered: true } }),
+    } as Response);
+
+    supabaseFromMock.mockImplementation((table: string) => {
+      if (table === "classes") {
+        return makeBuilder({
+          data: { id: "class-1", owner_id: "u1" },
+          error: null,
+        });
+      }
+      if (table === "enrollments") {
+        return makeBuilder({ data: null, error: null });
+      }
+      if (table === "materials") {
+        return makeBuilder({ data: { id: "m1" }, error: null });
+      }
+      return makeBuilder({ data: null, error: null });
+    });
+
+    await expectRedirect(
+      () => uploadMaterial("class-1", formData),
+      "/classes/class-1?uploaded=processing",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(supabaseRpcMock).not.toHaveBeenCalledWith(
+      "enqueue_material_job",
+      expect.anything(),
+    );
+  });
+
+  it("forces python material dispatch in python_only mode even when MATERIAL_WORKER_BACKEND=legacy", async () => {
+    process.env.PYTHON_BACKEND_MODE = "python_only";
+    process.env.MATERIAL_WORKER_BACKEND = "legacy";
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
+    process.env.PYTHON_BACKEND_API_KEY = "test-key";
+
+    const file = new File([Buffer.from("hello")], "lecture.pdf", {
+      type: "application/pdf",
+    });
+    const formData = new FormData();
+    formData.set("file", file);
+    formData.set("title", "Lecture 1");
+
+    vi.mocked(detectMaterialKind).mockReturnValue("pdf");
+    vi.mocked(sanitizeFilename).mockReturnValue("lecture.pdf");
+
+    const fetchMock = vi.spyOn(global, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ok: true, data: { enqueued: true, triggered: true } }),
+    } as Response);
+
+    supabaseFromMock.mockImplementation((table: string) => {
+      if (table === "classes") {
+        return makeBuilder({
+          data: { id: "class-1", owner_id: "u1" },
+          error: null,
+        });
+      }
+      if (table === "enrollments") {
+        return makeBuilder({ data: null, error: null });
+      }
+      if (table === "materials") {
+        return makeBuilder({ data: { id: "m1" }, error: null });
+      }
+      return makeBuilder({ data: null, error: null });
+    });
+
+    await expectRedirect(
+      () => uploadMaterial("class-1", formData),
+      "/classes/class-1?uploaded=processing",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(supabaseFromMock).not.toHaveBeenCalledWith("material_processing_jobs");
   });
 
   it("falls back to supabase enqueue when python dispatch fails and strict mode is disabled", async () => {

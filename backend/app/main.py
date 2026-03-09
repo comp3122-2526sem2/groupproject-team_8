@@ -7,20 +7,41 @@ from fastapi.responses import JSONResponse
 
 from app.blueprints import generate_blueprint
 from app.chat import generate_chat
+from app.chat_workspace import (
+    ChatWorkspaceError,
+    archive_session,
+    create_session,
+    list_messages,
+    list_participants,
+    list_sessions,
+    rename_session,
+    send_message,
+)
+from app.classes import ClassDomainError, create_class, join_class
 from app.config import get_settings
 from app.flashcards import generate_flashcards
-from app.materials import dispatch_material_job
+from app.materials import dispatch_material_job, process_material_jobs
 from app.providers import generate_embeddings_with_fallback, generate_with_fallback
 from app.quiz import generate_quiz
 from app.schemas import (
     ApiEnvelope,
     ApiError,
     BlueprintGenerateRequest,
+    ClassCreateRequest,
+    ClassJoinRequest,
+    ChatWorkspaceMessageSendRequest,
+    ChatWorkspaceMessagesListRequest,
+    ChatWorkspaceParticipantsRequest,
+    ChatWorkspaceSessionArchiveRequest,
+    ChatWorkspaceSessionCreateRequest,
+    ChatWorkspaceSessionRenameRequest,
+    ChatWorkspaceSessionsListRequest,
     ChatGenerateRequest,
     EmbeddingsRequest,
     FlashcardsGenerateRequest,
     GenerateRequest,
     MaterialDispatchRequest,
+    MaterialProcessRequest,
     QuizGenerateRequest,
 )
 
@@ -40,7 +61,19 @@ def _auth_error_response(request: Request) -> JSONResponse | None:
     settings = get_settings()
     expected_api_key = settings.python_backend_api_key
     if not expected_api_key:
-        return None
+        if settings.python_backend_allow_unauthenticated_requests:
+            return None
+        return JSONResponse(
+            status_code=503,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(
+                    message="Python backend authentication is misconfigured.",
+                    code="backend_auth_misconfigured",
+                ),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
 
     header_key = request.headers.get("x-api-key")
     bearer = _parse_bearer_token(request.headers.get("authorization"))
@@ -141,6 +174,99 @@ async def dispatch_materials(request: Request, payload: MaterialDispatchRequest)
         )
 
 
+@app.post("/v1/materials/process")
+async def process_materials(request: Request, payload: MaterialProcessRequest):
+    unauthorized = _auth_error_response(request)
+    if unauthorized:
+        return unauthorized
+
+    settings = get_settings()
+    try:
+        result = process_material_jobs(settings, payload)
+        return ApiEnvelope(
+            ok=True,
+            data=result.model_dump(),
+            meta={"request_id": request.state.request_id},
+        ).model_dump()
+    except RuntimeError as error:
+        return JSONResponse(
+            status_code=502,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=str(error), code="material_process_error"),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+
+
+@app.post("/v1/classes/create")
+async def create_class_route(request: Request, payload: ClassCreateRequest):
+    unauthorized = _auth_error_response(request)
+    if unauthorized:
+        return unauthorized
+
+    settings = get_settings()
+    try:
+        result = create_class(settings, payload)
+        return ApiEnvelope(
+            ok=True,
+            data=result.model_dump(),
+            meta={"request_id": request.state.request_id},
+        ).model_dump()
+    except ClassDomainError as error:
+        return JSONResponse(
+            status_code=error.status_code,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=error.message, code=error.code),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+    except RuntimeError as error:
+        return JSONResponse(
+            status_code=502,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=str(error), code="class_create_error"),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+
+
+@app.post("/v1/classes/join")
+async def join_class_route(request: Request, payload: ClassJoinRequest):
+    unauthorized = _auth_error_response(request)
+    if unauthorized:
+        return unauthorized
+
+    settings = get_settings()
+    try:
+        result = join_class(settings, payload)
+        return ApiEnvelope(
+            ok=True,
+            data=result.model_dump(),
+            meta={"request_id": request.state.request_id},
+        ).model_dump()
+    except ClassDomainError as error:
+        return JSONResponse(
+            status_code=error.status_code,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=error.message, code=error.code),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+    except RuntimeError as error:
+        return JSONResponse(
+            status_code=502,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=str(error), code="class_join_error"),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+
+
 @app.post("/v1/blueprints/generate")
 async def generate_blueprints(request: Request, payload: BlueprintGenerateRequest):
     unauthorized = _auth_error_response(request)
@@ -236,6 +362,244 @@ async def generate_chat_route(request: Request, payload: ChatGenerateRequest):
             content=ApiEnvelope(
                 ok=False,
                 error=ApiError(message=str(error), code="chat_error"),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+
+
+@app.post("/v1/chat/workspace/participants")
+async def list_chat_workspace_participants_route(request: Request, payload: ChatWorkspaceParticipantsRequest):
+    unauthorized = _auth_error_response(request)
+    if unauthorized:
+        return unauthorized
+
+    settings = get_settings()
+    try:
+        result = list_participants(settings, payload)
+        return ApiEnvelope(
+            ok=True,
+            data=result,
+            meta={"request_id": request.state.request_id},
+        ).model_dump()
+    except ChatWorkspaceError as error:
+        return JSONResponse(
+            status_code=error.status_code,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=error.message, code=error.code),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+    except RuntimeError as error:
+        return JSONResponse(
+            status_code=502,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=str(error), code="chat_workspace_error"),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+
+
+@app.post("/v1/chat/workspace/sessions/list")
+async def list_chat_workspace_sessions_route(request: Request, payload: ChatWorkspaceSessionsListRequest):
+    unauthorized = _auth_error_response(request)
+    if unauthorized:
+        return unauthorized
+
+    settings = get_settings()
+    try:
+        result = list_sessions(settings, payload)
+        return ApiEnvelope(
+            ok=True,
+            data=result,
+            meta={"request_id": request.state.request_id},
+        ).model_dump()
+    except ChatWorkspaceError as error:
+        return JSONResponse(
+            status_code=error.status_code,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=error.message, code=error.code),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+    except RuntimeError as error:
+        return JSONResponse(
+            status_code=502,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=str(error), code="chat_workspace_error"),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+
+
+@app.post("/v1/chat/workspace/sessions/create")
+async def create_chat_workspace_session_route(request: Request, payload: ChatWorkspaceSessionCreateRequest):
+    unauthorized = _auth_error_response(request)
+    if unauthorized:
+        return unauthorized
+
+    settings = get_settings()
+    try:
+        result = create_session(settings, payload)
+        return ApiEnvelope(
+            ok=True,
+            data=result,
+            meta={"request_id": request.state.request_id},
+        ).model_dump()
+    except ChatWorkspaceError as error:
+        return JSONResponse(
+            status_code=error.status_code,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=error.message, code=error.code),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+    except RuntimeError as error:
+        return JSONResponse(
+            status_code=502,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=str(error), code="chat_workspace_error"),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+
+
+@app.post("/v1/chat/workspace/sessions/rename")
+async def rename_chat_workspace_session_route(request: Request, payload: ChatWorkspaceSessionRenameRequest):
+    unauthorized = _auth_error_response(request)
+    if unauthorized:
+        return unauthorized
+
+    settings = get_settings()
+    try:
+        result = rename_session(settings, payload)
+        return ApiEnvelope(
+            ok=True,
+            data=result,
+            meta={"request_id": request.state.request_id},
+        ).model_dump()
+    except ChatWorkspaceError as error:
+        return JSONResponse(
+            status_code=error.status_code,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=error.message, code=error.code),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+    except RuntimeError as error:
+        return JSONResponse(
+            status_code=502,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=str(error), code="chat_workspace_error"),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+
+
+@app.post("/v1/chat/workspace/sessions/archive")
+async def archive_chat_workspace_session_route(request: Request, payload: ChatWorkspaceSessionArchiveRequest):
+    unauthorized = _auth_error_response(request)
+    if unauthorized:
+        return unauthorized
+
+    settings = get_settings()
+    try:
+        result = archive_session(settings, payload)
+        return ApiEnvelope(
+            ok=True,
+            data=result,
+            meta={"request_id": request.state.request_id},
+        ).model_dump()
+    except ChatWorkspaceError as error:
+        return JSONResponse(
+            status_code=error.status_code,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=error.message, code=error.code),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+    except RuntimeError as error:
+        return JSONResponse(
+            status_code=502,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=str(error), code="chat_workspace_error"),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+
+
+@app.post("/v1/chat/workspace/messages/list")
+async def list_chat_workspace_messages_route(request: Request, payload: ChatWorkspaceMessagesListRequest):
+    unauthorized = _auth_error_response(request)
+    if unauthorized:
+        return unauthorized
+
+    settings = get_settings()
+    try:
+        result = list_messages(settings, payload)
+        return ApiEnvelope(
+            ok=True,
+            data=result,
+            meta={"request_id": request.state.request_id},
+        ).model_dump()
+    except ChatWorkspaceError as error:
+        return JSONResponse(
+            status_code=error.status_code,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=error.message, code=error.code),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+    except RuntimeError as error:
+        return JSONResponse(
+            status_code=502,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=str(error), code="chat_workspace_error"),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+
+
+@app.post("/v1/chat/workspace/messages/send")
+async def send_chat_workspace_message_route(request: Request, payload: ChatWorkspaceMessageSendRequest):
+    unauthorized = _auth_error_response(request)
+    if unauthorized:
+        return unauthorized
+
+    settings = get_settings()
+    try:
+        result = send_message(settings, payload)
+        return ApiEnvelope(
+            ok=True,
+            data=result,
+            meta={"request_id": request.state.request_id},
+        ).model_dump()
+    except ChatWorkspaceError as error:
+        return JSONResponse(
+            status_code=error.status_code,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=error.message, code=error.code),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+    except RuntimeError as error:
+        return JSONResponse(
+            status_code=502,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=str(error), code="chat_workspace_error"),
                 meta={"request_id": request.state.request_id},
             ).model_dump(),
         )

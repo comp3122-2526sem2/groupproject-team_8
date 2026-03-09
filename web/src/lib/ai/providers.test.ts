@@ -9,6 +9,7 @@ const ORIGINAL_ENV = { ...process.env };
 
 beforeEach(() => {
   process.env = { ...ORIGINAL_ENV };
+  delete process.env.PYTHON_BACKEND_MODE;
   vi.restoreAllMocks();
 });
 
@@ -207,6 +208,33 @@ describe("generateTextWithFallback", () => {
     expect(result.provider).toBe("openai");
     expect(result.model).toBe("gpt-test");
     expect(result.usage?.totalTokens).toBe(3);
+  });
+
+  it("routes generation through python backend when mode is python_only", async () => {
+    process.env.PYTHON_BACKEND_MODE = "python_only";
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
+
+    vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      makeJsonResponse({
+        ok: true,
+        data: {
+          provider: "openrouter",
+          model: "or-test",
+          content: '{"summary":"python-only","topics":[]}',
+          usage: { prompt_tokens: 5, completion_tokens: 7, total_tokens: 12 },
+          latency_ms: 35,
+        },
+      }),
+    );
+
+    const result = await generateTextWithFallback({
+      system: "sys",
+      user: "user",
+    });
+
+    expect(result.provider).toBe("openrouter");
+    expect(result.model).toBe("or-test");
+    expect(result.usage?.totalTokens).toBe(12);
   });
 
   it("falls back to local provider when python backend fails and strict mode is disabled", async () => {

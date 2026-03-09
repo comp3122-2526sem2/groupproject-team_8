@@ -5,7 +5,12 @@ from typing import Any
 import httpx
 
 from app.config import Settings
-from app.schemas import MaterialDispatchRequest, MaterialDispatchResult
+from app.schemas import (
+    MaterialDispatchRequest,
+    MaterialDispatchResult,
+    MaterialProcessRequest,
+    MaterialProcessResult,
+)
 
 
 def dispatch_material_job(settings: Settings, request: MaterialDispatchRequest) -> MaterialDispatchResult:
@@ -37,28 +42,57 @@ def dispatch_material_job(settings: Settings, request: MaterialDispatchRequest) 
 
         triggered = False
         if request.trigger_worker:
-            worker_url = settings.material_worker_function_url or (
-                f"{settings.supabase_url.rstrip('/')}/functions/v1/material-worker"
-            )
-            worker_headers = {"Content-Type": "application/json"}
-            token = settings.material_worker_token
-            if token:
-                worker_headers["Authorization"] = f"Bearer {token}"
-            worker_response = client.post(
-                worker_url,
-                headers=worker_headers,
-                json={"batchSize": max(1, min(25, settings.material_worker_batch))},
-            )
-            if worker_response.status_code >= 400:
-                worker_payload = _safe_json(worker_response)
-                message = _extract_error_message(worker_payload) or "Failed to trigger material worker."
-                raise RuntimeError(message)
+            trigger_material_worker(settings, client=client)
             triggered = True
 
     return MaterialDispatchResult(
         enqueued=True,
         triggered=triggered,
     )
+
+
+def process_material_jobs(settings: Settings, request: MaterialProcessRequest) -> MaterialProcessResult:
+    with httpx.Client(timeout=max(5, settings.ai_request_timeout_ms / 1000)) as client:
+        payload = trigger_material_worker(settings, request.batch_size, client=client)
+
+    return MaterialProcessResult(
+        triggered=True,
+        processed=_coerce_non_negative_int(payload.get("processed")),
+        succeeded=_coerce_non_negative_int(payload.get("succeeded")),
+        failed=_coerce_non_negative_int(payload.get("failed")),
+        retried=_coerce_non_negative_int(payload.get("retried")),
+        errors=_coerce_errors(payload.get("errors")),
+    )
+
+
+def trigger_material_worker(
+    settings: Settings,
+    batch_size: int | None = None,
+    *,
+    client: httpx.Client,
+) -> dict[str, Any]:
+    worker_url = settings.material_worker_function_url
+    if not worker_url:
+        if not settings.supabase_url:
+            raise RuntimeError("Supabase URL is not configured on Python backend.")
+        worker_url = f"{settings.supabase_url.rstrip('/')}/functions/v1/material-worker"
+
+    clamped_batch = max(1, min(25, batch_size or settings.material_worker_batch))
+    worker_headers = {"Content-Type": "application/json"}
+    token = settings.material_worker_token
+    if token:
+        worker_headers["Authorization"] = f"Bearer {token}"
+
+    worker_response = client.post(
+        worker_url,
+        headers=worker_headers,
+        json={"batchSize": clamped_batch},
+    )
+    worker_payload = _safe_json(worker_response)
+    if worker_response.status_code >= 400:
+        message = _extract_error_message(worker_payload) or "Failed to trigger material worker."
+        raise RuntimeError(message)
+    return worker_payload
 
 
 def _safe_json(response: httpx.Response) -> dict[str, Any]:
@@ -83,3 +117,22 @@ def _extract_error_message(payload: dict[str, Any]) -> str | None:
     if isinstance(message, str) and message.strip():
         return message.strip()
     return None
+
+
+def _coerce_non_negative_int(value: Any) -> int:
+    if isinstance(value, int):
+        return max(0, value)
+    if isinstance(value, float):
+        return max(0, int(value))
+    if isinstance(value, str):
+        try:
+            return max(0, int(value.strip()))
+        except ValueError:
+            return 0
+    return 0
+
+
+def _coerce_errors(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]

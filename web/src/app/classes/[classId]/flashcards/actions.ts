@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { generateTextWithFallback } from "@/lib/ai/providers";
+import { resolvePythonBackendEnabled, resolvePythonBackendStrict } from "@/lib/ai/python-migration";
 import { generateFlashcardsViaPythonBackend } from "@/lib/ai/python-flashcards";
 import {
   createWholeClassAssignment,
@@ -48,29 +49,14 @@ function getFormString(formData: FormData, key: string) {
   return value.trim();
 }
 
-function normalizeBooleanEnv(value: string | undefined, fallback: boolean) {
-  if (!value) {
-    return fallback;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) {
-    return true;
-  }
-  if (["0", "false", "no", "off"].includes(normalized)) {
-    return false;
-  }
-  return fallback;
-}
-
 function shouldUsePythonFlashcardsBackend() {
-  return normalizeBooleanEnv(
+  return resolvePythonBackendEnabled(
     process.env.PYTHON_BACKEND_FLASHCARDS_ENABLED ?? process.env.PYTHON_BACKEND_ENABLED,
-    false,
   );
 }
 
 function isPythonBackendStrict() {
-  return normalizeBooleanEnv(process.env.PYTHON_BACKEND_STRICT, false);
+  return resolvePythonBackendStrict();
 }
 
 function toFriendlyFlashcardsGenerationError(error: unknown) {

@@ -153,6 +153,7 @@ describe("generateBlueprint", () => {
     delete process.env.PYTHON_BACKEND_URL;
     delete process.env.PYTHON_BACKEND_API_KEY;
     delete process.env.PYTHON_BACKEND_STRICT;
+    delete process.env.PYTHON_BACKEND_MODE;
     mockRequireVerifiedUserSuccess();
     supabaseRpcMock.mockResolvedValue({ data: null, error: null });
   });

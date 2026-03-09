@@ -25,6 +25,7 @@ def _get_int(name: str, fallback: int) -> int:
 @dataclass(frozen=True)
 class Settings:
     python_backend_api_key: str | None
+    python_backend_allow_unauthenticated_requests: bool
     ai_provider_default: str
     ai_request_timeout_ms: int
     ai_embedding_timeout_ms: int
@@ -51,6 +52,10 @@ class Settings:
 def get_settings() -> Settings:
     return Settings(
         python_backend_api_key=os.getenv("PYTHON_BACKEND_API_KEY"),
+        python_backend_allow_unauthenticated_requests=_get_bool(
+            "PYTHON_BACKEND_ALLOW_UNAUTHENTICATED_REQUESTS",
+            False,
+        ),
         ai_provider_default=os.getenv("AI_PROVIDER_DEFAULT", "openrouter").strip().lower(),
         ai_request_timeout_ms=_get_int("AI_REQUEST_TIMEOUT_MS", 30000),
         ai_embedding_timeout_ms=_get_int("AI_EMBEDDING_TIMEOUT_MS", 30000),

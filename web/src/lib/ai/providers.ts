@@ -4,6 +4,7 @@ import {
   generateEmbeddingsViaPythonBackend,
   generateTextViaPythonBackend,
 } from "@/lib/ai/python-backend";
+import { resolvePythonBackendEnabled, resolvePythonBackendStrict } from "@/lib/ai/python-migration";
 
 export type AiProvider = "openrouter" | "openai" | "gemini";
 
@@ -168,25 +169,11 @@ function tryResolveProviderOrder() {
 }
 
 function shouldUsePythonBackend() {
-  return normalizeBooleanEnv(process.env.PYTHON_BACKEND_ENABLED, false);
+  return resolvePythonBackendEnabled(process.env.PYTHON_BACKEND_ENABLED);
 }
 
 function isPythonBackendStrict() {
-  return normalizeBooleanEnv(process.env.PYTHON_BACKEND_STRICT, false);
-}
-
-function normalizeBooleanEnv(value: string | undefined, fallback: boolean) {
-  if (!value) {
-    return fallback;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) {
-    return true;
-  }
-  if (["0", "false", "no", "off"].includes(normalized)) {
-    return false;
-  }
-  return fallback;
+  return resolvePythonBackendStrict();
 }
 
 function isProviderConfigured(provider: AiProvider) {

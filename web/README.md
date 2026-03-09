@@ -46,7 +46,14 @@ pnpm dev
 - Configure at least one AI provider with both a chat model and an embedding model.
 - Optional migration adapter: set `PYTHON_BACKEND_ENABLED=true` and `PYTHON_BACKEND_URL` to route
   AI generation/embedding calls through the Python backend while preserving existing Next flows.
+- Full migration gate: set `PYTHON_BACKEND_MODE=python_only` to enforce Python backend usage across
+  AI generation paths, class create/join, class chat workspace, and material dispatch (with strict fallback behavior).
+- Optional class workflow adapter: set `PYTHON_BACKEND_CLASSES_ENABLED=true` to route class create/join
+  through Python endpoints in hybrid mode.
+- Optional chat workspace adapter: set `PYTHON_BACKEND_CHAT_WORKSPACE_ENABLED=true` to route class chat
+  workspace session/message list/send operations through Python endpoints in hybrid mode.
 - Default background ingestion backend is `MATERIAL_WORKER_BACKEND=supabase`, which enqueues jobs through Supabase `pgmq`.
 - Supabase Cron dispatches the `material-worker` Edge Function (configured by migration and Vault secrets).
 - `POST /api/materials/process` is a legacy fallback worker path when `MATERIAL_WORKER_BACKEND=legacy`.
+- `POST /api/materials/process` proxies to Python `/v1/materials/process` when `PYTHON_BACKEND_MODE=python_only`.
 - For full staging + production rollout steps, see `../DEPLOYMENT.md`.

@@ -51,6 +51,7 @@ describe("generateGroundedChatResponse", () => {
     delete process.env.PYTHON_BACKEND_ENABLED;
     delete process.env.PYTHON_BACKEND_CHAT_ENABLED;
     delete process.env.PYTHON_BACKEND_STRICT;
+    delete process.env.PYTHON_BACKEND_MODE;
     delete process.env.PYTHON_BACKEND_CHAT_ENGINE;
     delete process.env.PYTHON_BACKEND_CHAT_TOOL_MODE;
     delete process.env.PYTHON_BACKEND_CHAT_TOOL_CATALOG;
@@ -110,6 +111,8 @@ describe("generateGroundedChatResponse", () => {
     expect(generateChatViaPythonBackend).toHaveBeenCalledTimes(1);
     expect(generateChatViaPythonBackend).toHaveBeenCalledWith(
       expect.objectContaining({
+        classId: "class-1",
+        userId: "student-1",
         toolMode: "off",
         toolCatalog: ["grounding_context.read", "memory.search", "memory.save"],
         orchestrationHints: expect.objectContaining({
@@ -117,6 +120,40 @@ describe("generateGroundedChatResponse", () => {
         }),
       }),
     );
+    expect(generateTextWithFallback).not.toHaveBeenCalled();
+    expect(parseChatModelResponse).not.toHaveBeenCalled();
+  });
+
+  it("routes grounded chat generation through python backend when mode is python_only", async () => {
+    process.env.PYTHON_BACKEND_MODE = "python_only";
+
+    generateChatViaPythonBackend.mockResolvedValue({
+      payload: {
+        safety: "ok",
+        answer: "Grounded response",
+        citations: [{ sourceLabel: "Source 1", rationale: "Based on class material." }],
+      },
+      provider: "openrouter",
+      model: "or-model",
+      usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
+      latencyMs: 15,
+      orchestration: {
+        engine: "langgraph_v1",
+        tool_mode: "auto",
+        tool_calls: [],
+      },
+    });
+
+    await generateGroundedChatResponse({
+      classId: "class-1",
+      classTitle: "Physics",
+      userId: "student-1",
+      userMessage: "Can we review kinematics?",
+      transcript: [],
+      purpose: "student_chat_open_v2",
+    });
+
+    expect(generateChatViaPythonBackend).toHaveBeenCalledTimes(1);
     expect(generateTextWithFallback).not.toHaveBeenCalled();
     expect(parseChatModelResponse).not.toHaveBeenCalled();
   });
@@ -156,6 +193,8 @@ describe("generateGroundedChatResponse", () => {
 
     expect(generateChatViaPythonBackend).toHaveBeenCalledWith(
       expect.objectContaining({
+        classId: "class-1",
+        userId: "student-1",
         toolMode: "plan",
         toolCatalog: ["grounding_context.read", "web.search"],
         orchestrationHints: expect.objectContaining({

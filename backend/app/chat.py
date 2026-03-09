@@ -383,18 +383,21 @@ def resolve_timeout_seconds(timeout_ms: int | None) -> float:
 
 
 def resolve_thread_id(request: ChatGenerateRequest) -> str:
-    if request.session_id and normalize_text(request.session_id):
-        return normalize_text(request.session_id)
-    seed = f"{request.class_title}|{request.purpose or 'chat'}"
+    class_key = normalize_namespace_key(request.class_id) or "class"
+    user_key = normalize_namespace_key(request.user_id) or "user"
+    purpose_key = normalize_namespace_key(request.purpose or "chat")
+    session_key = normalize_namespace_key(request.session_id or "default")
+    seed = f"{class_key}.{user_key}.{purpose_key}.{session_key}"
     normalized = "".join(char if char.isalnum() or char in {"-", "_", "."} else "_" for char in seed)
     return normalized[:128] or "chat-thread"
 
 
 def resolve_memory_namespace(request: ChatGenerateRequest) -> tuple[str, ...]:
-    class_key = normalize_namespace_key(request.class_title) or "class"
+    class_key = normalize_namespace_key(request.class_id) or "class"
+    user_key = normalize_namespace_key(request.user_id) or "user"
     purpose_key = normalize_namespace_key(request.purpose or "chat")
     session_key = normalize_namespace_key(request.session_id or "default")
-    return ("chat_memory", class_key, purpose_key, session_key)
+    return ("chat_memory", class_key, user_key, purpose_key, session_key)
 
 
 def normalize_namespace_key(value: str) -> str:

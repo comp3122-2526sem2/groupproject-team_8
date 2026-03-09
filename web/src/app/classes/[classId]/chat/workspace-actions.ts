@@ -1,7 +1,17 @@
 "use server";
 
 import { getClassAccess, requireAuthenticatedUser } from "@/lib/activities/access";
+import { resolvePythonBackendEnabled, resolvePythonBackendStrict } from "@/lib/ai/python-migration";
 import { generateGroundedChatResponse } from "@/lib/chat/generate";
+import {
+  archiveWorkspaceSessionViaPython,
+  createWorkspaceSessionViaPython,
+  listWorkspaceMessagesViaPython,
+  listWorkspaceParticipantsViaPython,
+  listWorkspaceSessionsViaPython,
+  renameWorkspaceSessionViaPython,
+  sendWorkspaceMessageViaPython,
+} from "@/lib/chat/python-workspace";
 import type {
   ChatCompactionSummary,
   ChatModelResponse,
@@ -89,6 +99,49 @@ function parsePositiveIntegerEnv(envValue: string | undefined, fallback: number)
 
 const CHAT_HISTORY_PAGE_SIZE = parsePositiveIntegerEnv(process.env.CHAT_HISTORY_PAGE_SIZE, 120);
 const CHAT_CONTEXT_FETCH_LIMIT = Math.max(CHAT_COMPACTION_TRIGGER_TURNS * 3, CHAT_CONTEXT_RECENT_TURNS * 3, 180);
+
+function shouldUsePythonChatWorkspaceBackend() {
+  return resolvePythonBackendEnabled(
+    process.env.PYTHON_BACKEND_CHAT_WORKSPACE_ENABLED ??
+      process.env.PYTHON_BACKEND_CHAT_ENABLED ??
+      process.env.PYTHON_BACKEND_ENABLED,
+  );
+}
+
+function isPythonBackendStrict() {
+  return resolvePythonBackendStrict();
+}
+
+function toFriendlyPythonWorkspaceError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return "Unable to load class chat workspace right now. Please try again.";
+  }
+
+  const code = (error as { code?: unknown }).code;
+  if (code === "class_access_required") {
+    return "Class access required.";
+  }
+  if (code === "teacher_access_required") {
+    return "Teacher access is required to monitor student chats.";
+  }
+  if (code === "owner_user_not_enrolled") {
+    return "Selected user is not enrolled in this class.";
+  }
+  if (code === "session_not_found") {
+    return "Chat session not found.";
+  }
+  if (code === "session_owner_mismatch") {
+    return "Chat session does not belong to the selected user.";
+  }
+  if (code === "send_session_owner_mismatch") {
+    return "You can only send messages in your own chat sessions.";
+  }
+  if (code === "response_generation_failed") {
+    return "Sorry, I couldn't generate a response right now. Please try again.";
+  }
+
+  return error.message || "Unable to load class chat workspace right now. Please try again.";
+}
 
 function normalizeSession(row: SessionRow): ClassChatSession {
   return {
@@ -298,6 +351,26 @@ export async function listClassChatParticipants(
     return access;
   }
 
+  if (shouldUsePythonChatWorkspaceBackend()) {
+    try {
+      const data = await listWorkspaceParticipantsViaPython({
+        classId,
+        userId: access.user.id,
+      });
+      return {
+        ok: true,
+        data,
+      };
+    } catch (error) {
+      if (isPythonBackendStrict()) {
+        return {
+          ok: false,
+          error: toFriendlyPythonWorkspaceError(error),
+        };
+      }
+    }
+  }
+
   if (!access.role.isTeacher) {
     return {
       ok: false,
@@ -370,6 +443,27 @@ export async function listClassChatSessions(
     return access;
   }
 
+  if (shouldUsePythonChatWorkspaceBackend()) {
+    try {
+      const data = await listWorkspaceSessionsViaPython({
+        classId,
+        userId: access.user.id,
+        ownerUserId,
+      });
+      return {
+        ok: true,
+        data,
+      };
+    } catch (error) {
+      if (isPythonBackendStrict()) {
+        return {
+          ok: false,
+          error: toFriendlyPythonWorkspaceError(error),
+        };
+      }
+    }
+  }
+
   const owner = await resolveOwnerUserId({
     classId,
     requestedOwnerUserId: ownerUserId,
@@ -414,6 +508,27 @@ export async function createClassChatSession(
   const access = await resolveAccess(classId);
   if (!access.ok) {
     return access;
+  }
+
+  if (shouldUsePythonChatWorkspaceBackend()) {
+    try {
+      const data = await createWorkspaceSessionViaPython({
+        classId,
+        userId: access.user.id,
+        title,
+      });
+      return {
+        ok: true,
+        data,
+      };
+    } catch (error) {
+      if (isPythonBackendStrict()) {
+        return {
+          ok: false,
+          error: toFriendlyPythonWorkspaceError(error),
+        };
+      }
+    }
   }
 
   const normalizedTitle = title?.trim() || "New chat";
@@ -463,6 +578,28 @@ export async function renameClassChatSession(
     };
   }
 
+  if (shouldUsePythonChatWorkspaceBackend()) {
+    try {
+      const data = await renameWorkspaceSessionViaPython({
+        classId,
+        userId: access.user.id,
+        sessionId,
+        title: normalizedTitle,
+      });
+      return {
+        ok: true,
+        data,
+      };
+    } catch (error) {
+      if (isPythonBackendStrict()) {
+        return {
+          ok: false,
+          error: toFriendlyPythonWorkspaceError(error),
+        };
+      }
+    }
+  }
+
   const { data: session, error } = await access.supabase
     .from("class_chat_sessions")
     .update({
@@ -497,6 +634,27 @@ export async function archiveClassChatSession(
   const access = await resolveAccess(classId);
   if (!access.ok) {
     return access;
+  }
+
+  if (shouldUsePythonChatWorkspaceBackend()) {
+    try {
+      const data = await archiveWorkspaceSessionViaPython({
+        classId,
+        userId: access.user.id,
+        sessionId,
+      });
+      return {
+        ok: true,
+        data,
+      };
+    } catch (error) {
+      if (isPythonBackendStrict()) {
+        return {
+          ok: false,
+          error: toFriendlyPythonWorkspaceError(error),
+        };
+      }
+    }
   }
 
   const { error } = await access.supabase
@@ -542,6 +700,30 @@ export async function listClassChatMessages(
   const access = await resolveAccess(classId);
   if (!access.ok) {
     return access;
+  }
+
+  if (shouldUsePythonChatWorkspaceBackend()) {
+    try {
+      const data = await listWorkspaceMessagesViaPython({
+        classId,
+        userId: access.user.id,
+        sessionId,
+        ownerUserId,
+        beforeCursor: options?.beforeCursor,
+        limit: options?.limit,
+      });
+      return {
+        ok: true,
+        data,
+      };
+    } catch (error) {
+      if (isPythonBackendStrict()) {
+        return {
+          ok: false,
+          error: toFriendlyPythonWorkspaceError(error),
+        };
+      }
+    }
   }
 
   const owner = await resolveOwnerUserId({
@@ -658,6 +840,28 @@ export async function sendClassChatMessage(
       ok: false,
       error: error instanceof Error ? error.message : "Message is invalid.",
     };
+  }
+
+  if (shouldUsePythonChatWorkspaceBackend()) {
+    try {
+      const data = await sendWorkspaceMessageViaPython({
+        classId,
+        userId: access.user.id,
+        sessionId,
+        message,
+      });
+      return {
+        ok: true,
+        data,
+      };
+    } catch (error) {
+      if (isPythonBackendStrict()) {
+        return {
+          ok: false,
+          error: toFriendlyPythonWorkspaceError(error),
+        };
+      }
+    }
   }
 
   const sessionResult = await getSessionWithAccess({

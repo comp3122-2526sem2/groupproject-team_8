@@ -10,6 +10,7 @@ import {
 } from "@/lib/ai/blueprint";
 import type { BloomLevel, BlueprintPayload, BlueprintTopic } from "@/lib/ai/blueprint";
 import { generateTextWithFallback } from "@/lib/ai/providers";
+import { resolvePythonBackendEnabled, resolvePythonBackendStrict } from "@/lib/ai/python-migration";
 import { generateBlueprintViaPythonBackend } from "@/lib/ai/python-blueprint";
 import { retrieveMaterialContext } from "@/lib/materials/retrieval";
 import { requireVerifiedUser } from "@/lib/auth/session";
@@ -58,29 +59,14 @@ function parseTimeoutMs(value: string | undefined, fallbackMs: number) {
   return Math.floor(parsed);
 }
 
-function normalizeBooleanEnv(value: string | undefined, fallback: boolean) {
-  if (!value) {
-    return fallback;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) {
-    return true;
-  }
-  if (["0", "false", "no", "off"].includes(normalized)) {
-    return false;
-  }
-  return fallback;
-}
-
 function shouldUsePythonBlueprintBackend() {
-  return normalizeBooleanEnv(
+  return resolvePythonBackendEnabled(
     process.env.PYTHON_BACKEND_BLUEPRINT_ENABLED ?? process.env.PYTHON_BACKEND_ENABLED,
-    false,
   );
 }
 
 function isPythonBackendStrict() {
-  return normalizeBooleanEnv(process.env.PYTHON_BACKEND_STRICT, false);
+  return resolvePythonBackendStrict();
 }
 
 function formatDuration(durationMs: number) {

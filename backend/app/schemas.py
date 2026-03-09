@@ -59,6 +59,92 @@ class MaterialDispatchResult(BaseModel):
     triggered: bool
 
 
+class MaterialProcessRequest(BaseModel):
+    batch_size: int | None = Field(default=None, ge=1, le=25)
+
+
+class MaterialProcessResult(BaseModel):
+    triggered: bool
+    processed: int
+    succeeded: int
+    failed: int
+    retried: int
+    errors: list[str] = Field(default_factory=list)
+
+
+class ClassCreateRequest(BaseModel):
+    user_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    subject: str | None = None
+    level: str | None = None
+    description: str | None = None
+    join_code: str = Field(min_length=1)
+
+
+class ClassCreateResult(BaseModel):
+    class_id: str = Field(min_length=1)
+
+
+class ClassJoinRequest(BaseModel):
+    user_id: str = Field(min_length=1)
+    join_code: str = Field(min_length=1)
+
+
+class ClassJoinResult(BaseModel):
+    class_id: str = Field(min_length=1)
+
+
+class ChatWorkspaceParticipantsRequest(BaseModel):
+    class_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
+
+
+class ChatWorkspaceSessionsListRequest(BaseModel):
+    class_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
+    owner_user_id: str | None = None
+
+
+class ChatWorkspaceSessionCreateRequest(BaseModel):
+    class_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
+    title: str | None = None
+
+
+class ChatWorkspaceSessionRenameRequest(BaseModel):
+    class_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+
+
+class ChatWorkspaceSessionArchiveRequest(BaseModel):
+    class_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+
+
+class ChatWorkspaceMessagesListRequest(BaseModel):
+    class_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    owner_user_id: str | None = None
+    before_cursor: str | None = None
+    limit: int | None = Field(default=None, ge=1, le=200)
+
+
+class ChatWorkspaceMessageSendRequest(BaseModel):
+    class_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    message: str = Field(min_length=1)
+    timeout_ms: int | None = None
+    max_tokens: int | None = Field(default=None, ge=1, le=16000)
+    tool_mode: Literal["off", "plan", "auto"] = "off"
+    tool_catalog: list[str] | None = None
+    orchestration_hints: dict[str, Any] | None = None
+
+
 class BlueprintGenerateRequest(BaseModel):
     class_title: str = Field(min_length=1)
     subject: str | None = None
@@ -129,6 +215,8 @@ class ChatTranscriptTurn(BaseModel):
 
 
 class ChatGenerateRequest(BaseModel):
+    class_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
     class_title: str = Field(min_length=1)
     user_message: str = Field(min_length=1)
     transcript: list[ChatTranscriptTurn] = Field(default_factory=list)

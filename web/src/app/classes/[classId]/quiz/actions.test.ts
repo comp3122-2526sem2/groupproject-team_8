@@ -134,6 +134,7 @@ describe("quiz actions", () => {
     delete process.env.PYTHON_BACKEND_URL;
     delete process.env.PYTHON_BACKEND_API_KEY;
     delete process.env.PYTHON_BACKEND_STRICT;
+    delete process.env.PYTHON_BACKEND_MODE;
     getClassAccess.mockResolvedValue({
       found: true,
       isTeacher: true,

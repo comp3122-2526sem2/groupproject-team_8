@@ -3,6 +3,8 @@ import "server-only";
 import type { ChatModelResponse, ChatTurn } from "@/lib/chat/types";
 
 export type PythonChatGenerateRequest = {
+  classId: string;
+  userId: string;
   classTitle: string;
   userMessage: string;
   transcript: ChatTurn[];
@@ -57,6 +59,8 @@ export async function generateChatViaPythonBackend(
         ...(apiKey ? { "x-api-key": apiKey } : {}),
       },
       body: JSON.stringify({
+        class_id: input.classId,
+        user_id: input.userId,
         class_title: input.classTitle,
         user_message: input.userMessage,
         transcript: input.transcript.map((turn) => ({

@@ -139,6 +139,8 @@ describe("/api/materials/process", () => {
     jobUpdates.length = 0;
     materialUpdates.length = 0;
     delete process.env.CRON_SECRET;
+    delete process.env.PYTHON_BACKEND_MODE;
+    delete process.env.PYTHON_BACKEND_URL;
 
     extractTextFromBuffer.mockResolvedValue({
       text: "algebra notes",
@@ -262,5 +264,37 @@ describe("/api/materials/process", () => {
 
     expect(response.status).toBe(401);
     expect(payload.error).toBe("Unauthorized");
+  });
+
+  it("proxies material processing to python backend when mode is python_only", async () => {
+    process.env.PYTHON_BACKEND_MODE = "python_only";
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
+    vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          data: {
+            processed: 3,
+            succeeded: 2,
+            failed: 1,
+            retried: 0,
+            errors: ["one failed"],
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const { POST } = await import("@/app/api/materials/process/route");
+
+    const response = await POST(
+      new Request("http://localhost/api/materials/process", { method: "POST" }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.processed).toBe(3);
+    expect(payload.failures).toEqual(["one failed"]);
+    expect(payload.succeeded).toBe(2);
   });
 });
