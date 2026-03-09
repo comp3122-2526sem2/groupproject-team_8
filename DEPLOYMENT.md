@@ -152,7 +152,7 @@ Legacy fallback names (optional):
 - `PYTHON_BACKEND_CHAT_ENABLED=false` (set `true` to route grounded chat generation domain to Python endpoint)
 - `PYTHON_BACKEND_CHAT_ENGINE=direct_v1` (`direct_v1` or `langgraph_v1` for Python chat orchestration)
 - `PYTHON_BACKEND_CHAT_TOOL_MODE=off` (`off`, `plan`, or `auto` tool-planning mode forwarded to Python chat domain)
-- `PYTHON_BACKEND_CHAT_TOOL_CATALOG=grounding_context.read` (comma-separated tool identifiers exposed to chat orchestration)
+- `PYTHON_BACKEND_CHAT_TOOL_CATALOG=grounding_context.read,memory.search,memory.save` (comma-separated tools exposed to chat orchestration)
 - `PYTHON_BACKEND_STRICT=false` (set `true` to fail fast instead of falling back to local Next adapters)
 - `PYTHON_BACKEND_URL` (for example `https://python-backend.example.com`)
 - `PYTHON_BACKEND_API_KEY` (if Python service requires API key auth)
@@ -172,6 +172,11 @@ Legacy fallback names (optional):
 
 If `PYTHON_BACKEND_ENABLED=true`, ensure preview deployments point to a preview/staging Python backend URL
 instead of production.
+
+When `PYTHON_BACKEND_CHAT_ENGINE=langgraph_v1`:
+- backend dependencies must include `langchain`, `langgraph`, and `langchain-openai`
+- OpenRouter/OpenAI compatible model settings must be configured for Python backend
+- if LangChain/LangGraph runtime is unavailable, chat falls back to `direct_v1` unless strict mode is enabled
 
 ## 10. Configure Supabase Auth redirect URLs
 

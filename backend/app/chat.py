@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import time
+from datetime import UTC, datetime
 from importlib import import_module
-from typing import Any, Callable, TypedDict
+from typing import Any, Callable
+from uuid import uuid4
 
 from app.config import Settings
 from app.providers import generate_with_fallback
@@ -12,20 +15,11 @@ GROUNDING_MODE = "balanced"
 DEFAULT_CHAT_MAX_TOKENS = 9000
 DEFAULT_CHAT_ENGINE = "direct_v1"
 LANGGRAPH_CHAT_ENGINE = "langgraph_v1"
-DEFAULT_TOOL_CATALOG = ["grounding_context.read"]
+DEFAULT_TOOL_CATALOG = ["grounding_context.read", "memory.search", "memory.save"]
+DEFAULT_MEMORY_RECALL_LIMIT = 5
 
-
-class LangGraphChatState(TypedDict, total=False):
-    prompt_system: str
-    prompt_user: str
-    planned_tool_calls: list[dict[str, Any]]
-    tool_outputs: list[dict[str, Any]]
-    orchestration_notes: list[str]
-    llm_content: str
-    provider: str
-    model: str
-    usage: dict[str, Any] | None
-    latency_ms: int
+_LANGGRAPH_CHECKPOINTER: Any | None = None
+_LANGGRAPH_STORE: Any | None = None
 
 
 def generate_chat(settings: Settings, request: ChatGenerateRequest) -> ChatGenerateResult:
@@ -49,7 +43,7 @@ def generate_chat(settings: Settings, request: ChatGenerateRequest) -> ChatGener
         request,
         prompt,
         engine=DEFAULT_CHAT_ENGINE,
-        notes=["Reserved for LangGraph/tool-calling orchestration in later phases."],
+        notes=["LangGraph/LangChain unavailable or disabled; using direct_v1."],
     )
 
 
@@ -95,129 +89,281 @@ def generate_chat_with_langgraph(
     request: ChatGenerateRequest,
     prompt: dict[str, str],
 ) -> ChatGenerateResult | None:
-    graph_parts = load_langgraph_runtime()
-    if graph_parts is None:
+    runtime = load_langchain_runtime()
+    if runtime is None:
+        return None
+
+    model_bundle = build_langchain_model(runtime, settings, request)
+    if model_bundle is None:
         return generate_chat_direct(
             settings,
             request,
             prompt,
             engine=DEFAULT_CHAT_ENGINE,
-            notes=["LangGraph is unavailable. Falling back to direct_v1."],
+            notes=[
+                "No LangChain-compatible model configured (requires OpenRouter/OpenAI via langchain-openai).",
+                "Falling back to direct_v1.",
+            ],
         )
+    model = model_bundle["model"]
 
-    StateGraph, start, end = graph_parts
     tool_catalog = request.tool_catalog or DEFAULT_TOOL_CATALOG
+    checkpointer, store = get_langgraph_memory_backends(runtime)
+    memory_namespace = resolve_memory_namespace(request)
+    tools = build_langchain_tools(runtime["tool"], request, tool_catalog, memory_namespace, store)
+    thread_id = resolve_thread_id(request)
+    memory_context = recall_long_term_memory(store, memory_namespace, request.user_message)
 
-    def plan_tools_node(state: LangGraphChatState) -> dict[str, Any]:
-        notes = list(state.get("orchestration_notes") or [])
-        planned_calls: list[dict[str, Any]] = []
-        tool_outputs: list[dict[str, Any]] = []
-        if request.tool_mode == "off":
-            notes.append("Tool mode is off; skipping planning.")
-            return {
-                "planned_tool_calls": planned_calls,
-                "tool_outputs": tool_outputs,
-                "orchestration_notes": notes,
-            }
-
-        if "grounding_context.read" in tool_catalog:
-            planned_calls.append(
-                {
-                    "name": "grounding_context.read",
-                    "arguments": {
-                        "sources": ["blueprint_context", "material_context"],
-                        "max_chars": 2500,
-                    },
-                }
-            )
-            tool_outputs.append(
-                {
-                    "name": "grounding_context.read",
-                    "output": {
-                        "blueprint_context": request.blueprint_context[:2500],
-                        "material_context": request.material_context[:2500],
-                    },
-                }
-            )
-            notes.append("Planned grounding_context.read before answer synthesis.")
-        else:
-            notes.append("No compatible tools in catalog; proceeding without tool execution.")
-
-        return {
-            "planned_tool_calls": planned_calls,
-            "tool_outputs": tool_outputs,
-            "orchestration_notes": notes,
-        }
-
-    def call_model_node(state: LangGraphChatState) -> dict[str, Any]:
-        tool_outputs = state.get("tool_outputs") or []
-        user_prompt = state["prompt_user"]
-        if tool_outputs:
-            user_prompt = "\n".join(
-                [
-                    user_prompt,
-                    "",
-                    "Tool outputs (JSON):",
-                    json.dumps(tool_outputs, ensure_ascii=True),
-                ]
-            )
-
-        result = generate_with_fallback(
-            settings,
-            GenerateRequest(
-                system=state["prompt_system"],
-                user=user_prompt,
-                temperature=0.2,
-                max_tokens=request.max_tokens or DEFAULT_CHAT_MAX_TOKENS,
-                timeout_ms=request.timeout_ms,
-                session_id=request.session_id,
-            ),
+    system_prompt = build_langchain_system_prompt(
+        base_system_prompt=prompt["system"],
+        tool_mode=request.tool_mode,
+        tool_catalog=tool_catalog,
+    )
+    user_prompt = prompt["user"]
+    if memory_context:
+        user_prompt = "\n".join(
+            [
+                user_prompt,
+                "",
+                "Long-term memory recall:",
+                memory_context,
+            ]
         )
-        return {
-            "llm_content": result.content,
-            "provider": result.provider,
-            "model": result.model,
-            "usage": result.usage.model_dump() if result.usage else None,
-            "latency_ms": result.latency_ms,
-        }
 
-    workflow = StateGraph(LangGraphChatState)
-    workflow.add_node("plan_tools", cast_callable(plan_tools_node))
-    workflow.add_node("call_model", cast_callable(call_model_node))
-    workflow.add_edge(start, "plan_tools")
-    workflow.add_edge("plan_tools", "call_model")
-    workflow.add_edge("call_model", end)
-
-    chain = workflow.compile()
-    final_state = chain.invoke(
-        {
-            "prompt_system": prompt["system"],
-            "prompt_user": prompt["user"],
-            "planned_tool_calls": [],
-            "tool_outputs": [],
-            "orchestration_notes": ["LangGraph orchestration active."],
-        }
+    agent = runtime["create_agent"](
+        model=model,
+        tools=tools,
+        system_prompt=system_prompt,
+        checkpointer=checkpointer,
+        store=store,
     )
 
-    content = normalize_text(final_state.get("llm_content"))
-    if not content:
-        raise RuntimeError("LangGraph chat flow did not produce model output.")
+    started_at = time.perf_counter()
+    agent_result = agent.invoke(
+        {"messages": [{"role": "user", "content": user_prompt}]},
+        config={"configurable": {"thread_id": thread_id}},
+    )
+    latency_ms = int((time.perf_counter() - started_at) * 1000)
 
-    payload = parse_chat_response(content)
-    usage_payload = final_state.get("usage")
+    messages = normalize_messages(agent_result)
+    final_content = extract_last_assistant_content(messages)
+    if not final_content:
+        return generate_chat_direct(
+            settings,
+            request,
+            prompt,
+            engine=DEFAULT_CHAT_ENGINE,
+            notes=["LangGraph produced no assistant output; falling back to direct_v1."],
+        )
+
+    try:
+        payload = parse_chat_response(final_content)
+    except RuntimeError:
+        return generate_chat_direct(
+            settings,
+            request,
+            prompt,
+            engine=DEFAULT_CHAT_ENGINE,
+            notes=["LangGraph output was not valid JSON payload; falling back to direct_v1."],
+        )
+
+    metadata = extract_last_assistant_metadata(
+        messages,
+        default_provider=model_bundle["provider"],
+        default_model=model_bundle["model_name"],
+    )
+    tool_calls = extract_tool_calls(messages)
     return ChatGenerateResult(
         payload=payload,
-        provider=normalize_provider(final_state.get("provider")),
-        model=normalize_model(final_state.get("model")),
-        usage=usage_payload if isinstance(usage_payload, dict) else None,
-        latency_ms=normalize_latency(final_state.get("latency_ms")),
+        provider=metadata["provider"],
+        model=metadata["model"],
+        usage=metadata["usage"],
+        latency_ms=metadata["latency_ms"] or latency_ms,
         orchestration={
             "engine": LANGGRAPH_CHAT_ENGINE,
             "tool_mode": request.tool_mode,
-            "tool_calls": final_state.get("planned_tool_calls") or [],
+            "tool_calls": tool_calls,
             "tool_catalog": tool_catalog,
-            "notes": "; ".join(final_state.get("orchestration_notes") or []),
+            "notes": "; ".join(
+                [
+                    "LangGraph + LangChain agent orchestration active.",
+                    "Short-term memory enabled via LangGraph checkpointer.",
+                    "Long-term memory enabled via LangGraph store tools.",
+                ]
+            ),
         },
+    )
+
+
+def load_langchain_runtime() -> dict[str, Any] | None:
+    try:
+        agents_module = import_module("langchain.agents")
+        tools_module = import_module("langchain.tools")
+        checkpoint_module = import_module("langgraph.checkpoint.memory")
+        store_module = import_module("langgraph.store.memory")
+        openai_module = import_module("langchain_openai")
+    except ImportError:
+        return None
+
+    create_agent = getattr(agents_module, "create_agent", None)
+    tool = getattr(tools_module, "tool", None)
+    checkpointer_cls = getattr(checkpoint_module, "InMemorySaver", None)
+    store_cls = getattr(store_module, "InMemoryStore", None)
+    chat_openai_cls = getattr(openai_module, "ChatOpenAI", None)
+    if not all([create_agent, tool, checkpointer_cls, store_cls, chat_openai_cls]):
+        return None
+
+    return {
+        "create_agent": create_agent,
+        "tool": tool,
+        "InMemorySaver": checkpointer_cls,
+        "InMemoryStore": store_cls,
+        "ChatOpenAI": chat_openai_cls,
+    }
+
+
+def build_langchain_model(
+    runtime: dict[str, Any],
+    settings: Settings,
+    request: ChatGenerateRequest,
+) -> dict[str, Any] | None:
+    ChatOpenAI = runtime["ChatOpenAI"]
+    timeout_s = resolve_timeout_seconds(request.timeout_ms)
+    max_tokens = request.max_tokens or DEFAULT_CHAT_MAX_TOKENS
+    if settings.openrouter_api_key and settings.openrouter_model:
+        default_headers: dict[str, str] = {}
+        if settings.openrouter_site_url:
+            default_headers["HTTP-Referer"] = settings.openrouter_site_url
+        if settings.openrouter_app_name:
+            default_headers["X-Title"] = settings.openrouter_app_name
+
+        return {
+            "model": ChatOpenAI(
+                model=settings.openrouter_model,
+                api_key=settings.openrouter_api_key,
+                base_url=settings.openrouter_base_url.rstrip("/"),
+                timeout=timeout_s,
+                temperature=0.2,
+                max_tokens=max_tokens,
+                default_headers=default_headers or None,
+            ),
+            "provider": "openrouter",
+            "model_name": settings.openrouter_model,
+        }
+
+    if settings.openai_api_key and settings.openai_model:
+        return {
+            "model": ChatOpenAI(
+                model=settings.openai_model,
+                api_key=settings.openai_api_key,
+                timeout=timeout_s,
+                temperature=0.2,
+                max_tokens=max_tokens,
+            ),
+            "provider": "openai",
+            "model_name": settings.openai_model,
+        }
+
+    return None
+
+
+def get_langgraph_memory_backends(runtime: dict[str, Any]) -> tuple[Any, Any]:
+    global _LANGGRAPH_CHECKPOINTER, _LANGGRAPH_STORE
+    if _LANGGRAPH_CHECKPOINTER is None:
+        _LANGGRAPH_CHECKPOINTER = runtime["InMemorySaver"]()
+    if _LANGGRAPH_STORE is None:
+        _LANGGRAPH_STORE = runtime["InMemoryStore"]()
+    return _LANGGRAPH_CHECKPOINTER, _LANGGRAPH_STORE
+
+
+def build_langchain_tools(
+    tool_decorator: Callable[..., Any],
+    request: ChatGenerateRequest,
+    tool_catalog: list[str],
+    memory_namespace: tuple[str, ...],
+    store: Any,
+) -> list[Any]:
+    tools: list[Any] = []
+
+    if "grounding_context.read" in tool_catalog:
+        @tool_decorator
+        def grounding_context_read(max_chars: int = 2500) -> str:
+            """Read grounded blueprint/material context snippets for citation-anchored responses."""
+            clamped = max(300, min(6000, max_chars))
+            return json.dumps(
+                {
+                    "blueprint_context": request.blueprint_context[:clamped],
+                    "material_context": request.material_context[:clamped],
+                },
+                ensure_ascii=True,
+            )
+
+        tools.append(grounding_context_read)
+
+    if "memory.save" in tool_catalog:
+        @tool_decorator
+        def memory_save(note: str, category: str = "general") -> str:
+            """Persist a durable long-term memory note for this conversation scope."""
+            value = normalize_text(note)
+            if not value:
+                return "Skipped: note was empty."
+
+            namespace = memory_namespace + (normalize_text(category) or "general",)
+            key = str(uuid4())
+            store.put(
+                namespace,
+                key,
+                {
+                    "note": value,
+                    "created_at": datetime.now(UTC).isoformat(),
+                    "source": "agent_tool",
+                },
+            )
+            return f"Saved memory key={key} in namespace={'/'.join(namespace)}."
+
+        tools.append(memory_save)
+
+    if "memory.search" in tool_catalog:
+        @tool_decorator
+        def memory_search(query: str, limit: int = DEFAULT_MEMORY_RECALL_LIMIT) -> str:
+            """Search durable long-term memory entries relevant to the current request."""
+            clamped_limit = max(1, min(20, limit))
+            normalized_query = normalize_text(query)
+            aggregated: list[dict[str, Any]] = []
+            for category in ("general", "facts"):
+                namespace = memory_namespace + (category,)
+                try:
+                    rows = store.search(
+                        namespace,
+                        query=normalized_query or request.user_message,
+                        limit=clamped_limit,
+                    )
+                except Exception:
+                    rows = []
+                aggregated.extend(serialize_store_rows(rows))
+            return json.dumps(aggregated[:clamped_limit], ensure_ascii=True)
+
+        tools.append(memory_search)
+
+    return tools
+
+
+def build_langchain_system_prompt(
+    *,
+    base_system_prompt: str,
+    tool_mode: str,
+    tool_catalog: list[str],
+) -> str:
+    return "\n".join(
+        [
+            base_system_prompt,
+            "",
+            "Agent orchestration policy:",
+            f"- Tool mode: {tool_mode}.",
+            f"- Tool catalog: {', '.join(tool_catalog) if tool_catalog else 'none'}.",
+            "- When tools are available and useful, call them before final answer synthesis.",
+            "- Always return the final answer as strict JSON object in the required schema.",
+        ]
     )
 
 
@@ -230,42 +376,190 @@ def resolve_chat_engine(orchestration_hints: dict[str, Any] | None) -> str:
     return DEFAULT_CHAT_ENGINE
 
 
-def load_langgraph_runtime() -> tuple[Any, Any, Any] | None:
-    try:
-        module = import_module("langgraph.graph")
-    except ImportError:
-        return None
-
-    state_graph = getattr(module, "StateGraph", None)
-    start = getattr(module, "START", None)
-    end = getattr(module, "END", None)
-    if state_graph is None or start is None or end is None:
-        return None
-    return state_graph, start, end
+def resolve_timeout_seconds(timeout_ms: int | None) -> float:
+    if isinstance(timeout_ms, int) and timeout_ms > 0:
+        return timeout_ms / 1000
+    return 30.0
 
 
-def cast_callable(
-    fn: Callable[[LangGraphChatState], dict[str, Any]],
-) -> Callable[..., dict[str, Any]]:
-    return fn
+def resolve_thread_id(request: ChatGenerateRequest) -> str:
+    if request.session_id and normalize_text(request.session_id):
+        return normalize_text(request.session_id)
+    seed = f"{request.class_title}|{request.purpose or 'chat'}"
+    normalized = "".join(char if char.isalnum() or char in {"-", "_", "."} else "_" for char in seed)
+    return normalized[:128] or "chat-thread"
 
 
-def normalize_provider(value: Any) -> str:
-    provider = normalize_text(value)
-    if provider in {"openrouter", "openai", "gemini"}:
-        return provider
-    return "openrouter"
+def resolve_memory_namespace(request: ChatGenerateRequest) -> tuple[str, ...]:
+    class_key = normalize_namespace_key(request.class_title) or "class"
+    purpose_key = normalize_namespace_key(request.purpose or "chat")
+    session_key = normalize_namespace_key(request.session_id or "default")
+    return ("chat_memory", class_key, purpose_key, session_key)
 
 
-def normalize_model(value: Any) -> str:
-    model = normalize_text(value)
-    return model or "unknown"
+def normalize_namespace_key(value: str) -> str:
+    normalized = "".join(char.lower() if char.isalnum() or char in {"-", "_"} else "_" for char in value.strip())
+    return normalized.strip("_")[:64]
 
 
-def normalize_latency(value: Any) -> int:
-    if isinstance(value, int) and value >= 0:
-        return value
-    return 0
+def recall_long_term_memory(store: Any, namespace_root: tuple[str, ...], query: str) -> str:
+    snippets: list[str] = []
+    for category in ("general", "facts"):
+        namespace = namespace_root + (category,)
+        try:
+            rows = store.search(
+                namespace,
+                query=normalize_text(query),
+                limit=DEFAULT_MEMORY_RECALL_LIMIT,
+            )
+        except Exception:
+            rows = []
+        for row in serialize_store_rows(rows):
+            value = row.get("value")
+            if isinstance(value, dict):
+                note = value.get("note")
+                if isinstance(note, str) and note.strip():
+                    snippets.append(f"- [{category}] {note.strip()}")
+    return "\n".join(snippets[:DEFAULT_MEMORY_RECALL_LIMIT])
+
+
+def normalize_messages(result: Any) -> list[Any]:
+    if isinstance(result, dict):
+        messages = result.get("messages")
+        if isinstance(messages, list):
+            return messages
+    return []
+
+
+def extract_last_assistant_content(messages: list[Any]) -> str:
+    for message in reversed(messages):
+        message_type = normalize_text(getattr(message, "type", ""))
+        if message_type in {"ai", "assistant"}:
+            content = coerce_message_content(message)
+            if content:
+                return content
+    return ""
+
+
+def extract_last_assistant_metadata(
+    messages: list[Any],
+    *,
+    default_provider: str,
+    default_model: str,
+) -> dict[str, Any]:
+    metadata = {
+        "provider": default_provider,
+        "model": default_model or "unknown",
+        "usage": None,
+        "latency_ms": 0,
+    }
+    for message in reversed(messages):
+        message_type = normalize_text(getattr(message, "type", ""))
+        if message_type not in {"ai", "assistant"}:
+            continue
+
+        response_metadata = getattr(message, "response_metadata", None)
+        if isinstance(response_metadata, dict):
+            model_name = normalize_text(response_metadata.get("model_name") or response_metadata.get("model"))
+            if model_name:
+                metadata["model"] = model_name
+
+            provider = normalize_text(response_metadata.get("provider") or response_metadata.get("model_provider"))
+            if provider in {"openrouter", "openai", "gemini"}:
+                metadata["provider"] = provider
+
+            token_usage = response_metadata.get("token_usage")
+            if isinstance(token_usage, dict):
+                metadata["usage"] = {
+                    "prompt_tokens": token_usage.get("prompt_tokens"),
+                    "completion_tokens": token_usage.get("completion_tokens"),
+                    "total_tokens": token_usage.get("total_tokens"),
+                }
+
+        usage_metadata = getattr(message, "usage_metadata", None)
+        if isinstance(usage_metadata, dict) and metadata["usage"] is None:
+            metadata["usage"] = {
+                "prompt_tokens": usage_metadata.get("input_tokens"),
+                "completion_tokens": usage_metadata.get("output_tokens"),
+                "total_tokens": usage_metadata.get("total_tokens"),
+            }
+        break
+
+    return metadata
+
+
+def extract_tool_calls(messages: list[Any]) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+    for message in messages:
+        tool_calls = getattr(message, "tool_calls", None)
+        if isinstance(tool_calls, list):
+            for call in tool_calls:
+                if isinstance(call, dict):
+                    calls.append(
+                        {
+                            "name": call.get("name"),
+                            "id": call.get("id"),
+                            "args": call.get("args"),
+                            "type": "tool_call",
+                        }
+                    )
+
+        message_type = normalize_text(getattr(message, "type", ""))
+        if message_type == "tool":
+            calls.append(
+                {
+                    "name": getattr(message, "name", None),
+                    "id": getattr(message, "tool_call_id", None),
+                    "output": coerce_message_content(message),
+                    "type": "tool_result",
+                }
+            )
+    return calls
+
+
+def coerce_message_content(message: Any) -> str:
+    content = getattr(message, "content", "")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block.strip())
+            elif isinstance(block, dict):
+                if isinstance(block.get("text"), str):
+                    parts.append(block["text"].strip())
+        return "\n".join([part for part in parts if part]).strip()
+    return ""
+
+
+def serialize_store_rows(rows: Any) -> list[dict[str, Any]]:
+    if not isinstance(rows, list):
+        return []
+
+    serialized: list[dict[str, Any]] = []
+    for row in rows:
+        if isinstance(row, dict):
+            serialized.append(
+                {
+                    "namespace": row.get("namespace"),
+                    "key": row.get("key"),
+                    "value": row.get("value"),
+                    "score": row.get("score"),
+                }
+            )
+            continue
+
+        serialized.append(
+            {
+                "namespace": getattr(row, "namespace", None),
+                "key": getattr(row, "key", None),
+                "value": getattr(row, "value", None),
+                "score": getattr(row, "score", None),
+            }
+        )
+
+    return serialized
 
 
 def build_chat_prompt(

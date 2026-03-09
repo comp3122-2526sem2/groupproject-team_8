@@ -107,6 +107,9 @@ Student Flow
       - includes orchestration fields (`tool_mode`, `tool_catalog`, `orchestration_hints`)
         and runtime metadata for LangGraph migration without changing frontend contracts
       - phase 7 introduces optional `langgraph_v1` engine with safe fallback to `direct_v1`
+      - phase 8 upgrades `langgraph_v1` to full LangChain/LangGraph agent flow:
+        short-term memory (checkpointer), long-term memory (store + tools), and context-engineered
+        tool usage (`grounding_context.read`, `memory.search`, `memory.save`)
 - AI Orchestrator: provider adapters, prompt templates, safety checks.
 - Supabase: Auth, Postgres, Storage, Row Level Security.
 

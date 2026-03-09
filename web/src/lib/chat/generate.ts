@@ -144,13 +144,13 @@ function resolvePythonChatToolMode() {
 function resolvePythonChatToolCatalog() {
   const raw = process.env.PYTHON_BACKEND_CHAT_TOOL_CATALOG;
   if (!raw) {
-    return ["grounding_context.read"];
+    return ["grounding_context.read", "memory.search", "memory.save"];
   }
   const catalog = raw
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-  return catalog.length > 0 ? catalog : ["grounding_context.read"];
+  return catalog.length > 0 ? catalog : ["grounding_context.read", "memory.search", "memory.save"];
 }
 
 function toFriendlyChatGenerationError(error: unknown) {

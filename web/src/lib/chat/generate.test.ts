@@ -111,7 +111,7 @@ describe("generateGroundedChatResponse", () => {
     expect(generateChatViaPythonBackend).toHaveBeenCalledWith(
       expect.objectContaining({
         toolMode: "off",
-        toolCatalog: ["grounding_context.read"],
+        toolCatalog: ["grounding_context.read", "memory.search", "memory.save"],
         orchestrationHints: expect.objectContaining({
           engine: "direct_v1",
         }),
