@@ -863,12 +863,12 @@ export async function sendClassChatMessage(
         data,
       };
     } catch (error) {
-      if (isPythonBackendStrict()) {
-        return {
-          ok: false,
-          error: toFriendlyPythonWorkspaceError(error),
-        };
-      }
+      // Sending a chat message is a mutating operation. Falling back to the
+      // legacy send path after an uncertain Python failure can duplicate writes.
+      return {
+        ok: false,
+        error: toFriendlyPythonWorkspaceError(error),
+      };
     }
   }
 

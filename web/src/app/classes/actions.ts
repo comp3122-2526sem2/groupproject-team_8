@@ -341,6 +341,9 @@ export async function createClass(formData: FormData) {
         });
         break;
       } catch (error) {
+        if (isRedirectError(error)) {
+          throw error;
+        }
         const pythonError = error as PythonClassApiError;
         if (pythonError.code === "join_code_conflict") {
           continue;
