@@ -379,6 +379,21 @@ describe("class actions", () => {
     );
     expect(redirect).toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [dispatchUrl, dispatchInit] = fetchMock.mock.calls[0] ?? [];
+    expect(String(dispatchUrl)).toContain("/v1/materials/dispatch");
+    expect(dispatchInit).toEqual(
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+    const dispatchPayload = JSON.parse(String((dispatchInit as RequestInit)?.body ?? "{}")) as {
+      class_id?: string;
+      material_id?: string;
+      trigger_worker?: boolean;
+    };
+    expect(dispatchPayload.class_id).toBe("class-1");
+    expect(typeof dispatchPayload.material_id).toBe("string");
+    expect(dispatchPayload.trigger_worker).toBe(true);
     expect(supabaseRpcMock).not.toHaveBeenCalledWith(
       "enqueue_material_job",
       expect.anything(),
