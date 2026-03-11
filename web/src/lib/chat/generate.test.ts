@@ -129,6 +129,31 @@ describe("generateGroundedChatResponse", () => {
     expect(parseChatModelResponse).not.toHaveBeenCalled();
   });
 
+  it("keeps grounded chat on local generation when only PYTHON_BACKEND_ENABLED is set", async () => {
+    process.env.PYTHON_BACKEND_ENABLED = "true";
+
+    generateTextWithFallback.mockResolvedValue({
+      provider: "openai",
+      model: "gpt-5-mini",
+      content: "{}",
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+      latencyMs: 12,
+    });
+
+    await generateGroundedChatResponse({
+      classId: "class-1",
+      classTitle: "Physics",
+      userId: "student-1",
+      userMessage: "Can we review kinematics?",
+      transcript: [],
+      purpose: "student_chat_open_v2",
+    });
+
+    expect(generateChatViaPythonBackend).not.toHaveBeenCalled();
+    expect(generateTextWithFallback).toHaveBeenCalledTimes(1);
+    expect(parseChatModelResponse).toHaveBeenCalledTimes(1);
+  });
+
   it("routes grounded chat generation through python backend when mode is python_only", async () => {
     process.env.PYTHON_BACKEND_MODE = "python_only";
 

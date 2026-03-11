@@ -478,6 +478,76 @@ describe("quiz actions", () => {
     );
   });
 
+  it("keeps quiz generation on local fallback when only PYTHON_BACKEND_ENABLED is set", async () => {
+    process.env.PYTHON_BACKEND_ENABLED = "true";
+
+    const supabaseFromMock = vi.fn();
+    requireAuthenticatedUser.mockResolvedValue({
+      supabase: { from: supabaseFromMock },
+      user: { id: "teacher-1" },
+    });
+    getClassAccess.mockResolvedValue({
+      found: true,
+      isTeacher: true,
+      isMember: true,
+      classTitle: "Calculus",
+    });
+    requirePublishedBlueprintId.mockResolvedValue("bp-1");
+    loadPublishedBlueprintContext.mockResolvedValue({
+      blueprintContext: "Limits and derivatives",
+    });
+    retrieveMaterialContext.mockResolvedValue("Material context");
+    buildQuizGenerationPrompt.mockReturnValue({ system: "system", user: "user" });
+    generateTextWithFallback.mockResolvedValue({
+      provider: "openai",
+      model: "gpt-5-mini",
+      content: "{}",
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+      latencyMs: 12,
+    });
+    parseQuizGenerationResponse.mockReturnValue({
+      questions: [
+        {
+          question: "1 + 1",
+          choices: ["1", "2", "3", "4"],
+          answer: "2",
+          explanation: "Basic addition.",
+        },
+      ],
+    });
+
+    const activityInsertBuilder = makeBuilder({ data: { id: "activity-1" }, error: null });
+    const questionInsertBuilder = makeBuilder({ error: null });
+    const aiRequestsBuilder = makeBuilder({ error: null });
+    const fetchMock = vi.spyOn(global, "fetch");
+    supabaseFromMock.mockImplementation((table: string) => {
+      if (table === "activities") {
+        return activityInsertBuilder;
+      }
+      if (table === "quiz_questions") {
+        return questionInsertBuilder;
+      }
+      if (table === "ai_requests") {
+        return aiRequestsBuilder;
+      }
+      return makeBuilder({ data: null, error: null });
+    });
+
+    const formData = new FormData();
+    formData.set("title", "Generated Quiz");
+    formData.set("instructions", "Use only class notes.");
+    formData.set("question_count", "1");
+
+    await expectRedirect(
+      () => generateQuizDraft("class-1", formData),
+      "/classes/class-1/activities/quiz/activity-1/edit?created=1",
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(generateTextWithFallback).toHaveBeenCalledTimes(1);
+    expect(parseQuizGenerationResponse).toHaveBeenCalledTimes(1);
+  });
+
   it("shows a friendly message when an internal redirect token is raised as an error", async () => {
     const supabaseFromMock = vi.fn();
     requireAuthenticatedUser.mockResolvedValue({

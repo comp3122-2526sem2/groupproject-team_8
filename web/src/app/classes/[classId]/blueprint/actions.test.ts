@@ -483,6 +483,92 @@ describe("generateBlueprint", () => {
       }),
     );
   });
+
+  it("keeps blueprint generation on local fallback when only PYTHON_BACKEND_ENABLED is set", async () => {
+    process.env.PYTHON_BACKEND_ENABLED = "true";
+
+    supabaseAuth.getUser.mockResolvedValueOnce({ data: { user: { id: "u1" } } });
+    let blueprintCall = 0;
+    let topicCall = 0;
+    const latestBlueprintBuilder = makeBuilder({ data: null, error: null });
+    const insertBlueprintBuilder = makeBuilder({ data: { id: "bp-1" }, error: null });
+
+    const fetchMock = vi.spyOn(global, "fetch");
+    supabaseFromMock.mockImplementation((table: string) => {
+      if (table === "classes") {
+        return makeBuilder({
+          data: {
+            id: "class-1",
+            owner_id: "u1",
+            title: "Math",
+            subject: "Mathematics",
+            level: "College",
+          },
+          error: null,
+        });
+      }
+      if (table === "enrollments") {
+        return makeBuilder({ data: null, error: null });
+      }
+      if (table === "materials") {
+        return makeBuilder({
+          data: [{ id: "m1", title: "Lecture", extracted_text: "content", status: "ready" }],
+          error: null,
+        });
+      }
+      if (table === "blueprints") {
+        blueprintCall += 1;
+        if (blueprintCall === 1) {
+          return latestBlueprintBuilder;
+        }
+        return insertBlueprintBuilder;
+      }
+      if (table === "topics") {
+        topicCall += 1;
+        return makeBuilder({ data: { id: `topic-${topicCall}` }, error: null });
+      }
+      if (table === "objectives") {
+        return makeBuilder({ error: null });
+      }
+      if (table === "ai_requests") {
+        return makeBuilder({ error: null });
+      }
+      return makeBuilder({ data: null, error: null });
+    });
+
+    vi.mocked(buildBlueprintPrompt).mockReturnValue({
+      system: "system",
+      user: "user",
+    });
+    vi.mocked(retrieveMaterialContext).mockResolvedValue("context");
+    vi.mocked(generateTextWithFallback).mockResolvedValue({
+      provider: "openrouter",
+      model: "model",
+      content: '{"summary":"ok"}',
+      usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
+      latencyMs: 10,
+    });
+    vi.mocked(parseBlueprintResponse).mockReturnValue({
+      summary: "Summary",
+      topics: [
+        {
+          key: "topic-1",
+          title: "Limits",
+          sequence: 1,
+          objectives: [{ statement: "Define limits." }],
+        },
+      ],
+    });
+
+    await expectRedirect(
+      () => generateBlueprint("class-1"),
+      "/classes/class-1/blueprint?generated=1",
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(generateTextWithFallback).toHaveBeenCalledTimes(1);
+    expect(parseBlueprintResponse).toHaveBeenCalledTimes(1);
+  });
 });
 
 function makeJsonResponse(payload: unknown, ok = true) {

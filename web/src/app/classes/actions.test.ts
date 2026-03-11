@@ -103,6 +103,8 @@ async function expectRedirect(action: () => Promise<void> | void, path: string) 
 describe("class actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.PYTHON_BACKEND_ENABLED;
+    delete process.env.PYTHON_BACKEND_CLASSES_ENABLED;
     delete process.env.MATERIAL_WORKER_BACKEND;
     delete process.env.PYTHON_BACKEND_URL;
     delete process.env.PYTHON_BACKEND_API_KEY;
@@ -181,6 +183,22 @@ describe("class actions", () => {
     await expectRedirect(() => createClass(formData), "/classes/class-python-1");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(supabaseRpcMock).not.toHaveBeenCalledWith("create_class", expect.anything());
+  });
+
+  it("does not route class creation through python when only PYTHON_BACKEND_ENABLED is set", async () => {
+    process.env.PYTHON_BACKEND_ENABLED = "true";
+    vi.mocked(generateJoinCode).mockReturnValue("JOIN01");
+
+    const fetchMock = vi.spyOn(global, "fetch");
+    supabaseRpcMock.mockResolvedValueOnce({ data: "class-1", error: null });
+    supabaseFromMock.mockImplementation(() => makeBuilder({ data: null, error: null }));
+
+    const formData = new FormData();
+    formData.set("title", "Physics");
+
+    await expectRedirect(() => createClass(formData), "/classes/class-1");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(supabaseRpcMock).toHaveBeenCalledWith("create_class", expect.anything());
   });
 
   it("retries python class creation when join code collides", async () => {
@@ -674,6 +692,47 @@ describe("class actions", () => {
       "enqueue_material_job",
       expect.anything(),
     );
+  });
+
+  it("rolls back uploaded material when python dispatch fails before enqueue in strict mode", async () => {
+    process.env.PYTHON_BACKEND_MODE = "python_only";
+
+    const file = new File([Buffer.from("hello")], "lecture.pdf", {
+      type: "application/pdf",
+    });
+    const formData = new FormData();
+    formData.set("file", file);
+    formData.set("title", "Lecture 1");
+
+    vi.mocked(detectMaterialKind).mockReturnValue("pdf");
+    vi.mocked(sanitizeFilename).mockReturnValue("lecture.pdf");
+
+    supabaseFromMock.mockImplementation((table: string) => {
+      if (table === "classes") {
+        return makeBuilder({
+          data: { id: "class-1", owner_id: "u1" },
+          error: null,
+        });
+      }
+      if (table === "enrollments") {
+        return makeBuilder({ data: null, error: null });
+      }
+      if (table === "materials") {
+        return makeBuilder({ data: { id: "m1" }, error: null });
+      }
+      return makeBuilder({ data: null, error: null });
+    });
+
+    await expectRedirect(
+      () => uploadMaterial("class-1", formData),
+      `/classes/class-1?error=${encodeURIComponent(
+        "Failed to queue material processing: PYTHON_BACKEND_URL is not configured.",
+      )}`,
+    );
+
+    const materialsCalls = supabaseFromMock.mock.calls.filter((call) => call[0] === "materials");
+    expect(materialsCalls).toHaveLength(2);
+    expect(supabaseStorageMock.from).toHaveBeenCalledTimes(2);
   });
 
   it("blocks class creation for student accounts", async () => {

@@ -60,9 +60,7 @@ function parseTimeoutMs(value: string | undefined, fallbackMs: number) {
 }
 
 function shouldUsePythonBlueprintBackend() {
-  return resolvePythonBackendEnabled(
-    process.env.PYTHON_BACKEND_BLUEPRINT_ENABLED ?? process.env.PYTHON_BACKEND_ENABLED,
-  );
+  return resolvePythonBackendEnabled(process.env.PYTHON_BACKEND_BLUEPRINT_ENABLED);
 }
 
 function isPythonBackendStrict() {

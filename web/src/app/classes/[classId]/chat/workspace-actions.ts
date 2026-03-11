@@ -102,9 +102,7 @@ const CHAT_CONTEXT_FETCH_LIMIT = Math.max(CHAT_COMPACTION_TRIGGER_TURNS * 3, CHA
 
 function shouldUsePythonChatWorkspaceBackend() {
   return resolvePythonBackendEnabled(
-    process.env.PYTHON_BACKEND_CHAT_WORKSPACE_ENABLED ??
-      process.env.PYTHON_BACKEND_CHAT_ENABLED ??
-      process.env.PYTHON_BACKEND_ENABLED,
+    process.env.PYTHON_BACKEND_CHAT_WORKSPACE_ENABLED ?? process.env.PYTHON_BACKEND_CHAT_ENABLED,
   );
 }
 

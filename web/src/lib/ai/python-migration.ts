@@ -10,7 +10,7 @@ export function resolvePythonBackendEnabled(featureFlagValue: string | undefined
   if (isPythonOnlyMode()) {
     return true;
   }
-  return normalizeBooleanEnv(featureFlagValue, normalizeBooleanEnv(process.env.PYTHON_BACKEND_ENABLED, false));
+  return normalizeBooleanEnv(featureFlagValue, false);
 }
 
 export function resolvePythonBackendStrict() {

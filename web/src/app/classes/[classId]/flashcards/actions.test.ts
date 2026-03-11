@@ -256,6 +256,63 @@ describe("flashcards actions", () => {
     fetchMock.mockRestore();
   });
 
+  it("keeps flashcards generation on local fallback when only PYTHON_BACKEND_ENABLED is set", async () => {
+    process.env.PYTHON_BACKEND_ENABLED = "true";
+
+    const supabaseFromMock = vi.fn();
+    requireAuthenticatedUser.mockResolvedValue({
+      supabase: { from: supabaseFromMock },
+      user: { id: "teacher-1" },
+    });
+    buildFlashcardsGenerationPrompt.mockReturnValue({ system: "system", user: "user" });
+    generateTextWithFallback.mockResolvedValue({
+      provider: "openai",
+      model: "gpt-5-mini",
+      content: "{}",
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+      latencyMs: 12,
+    });
+    parseFlashcardsGenerationResponse.mockReturnValue({
+      cards: [
+        {
+          front: "What is 1 + 1?",
+          back: "2",
+        },
+      ],
+    });
+
+    const activityInsertBuilder = makeBuilder({ data: { id: "activity-1" }, error: null });
+    const cardsInsertBuilder = makeBuilder({ error: null });
+    const aiRequestsBuilder = makeBuilder({ error: null });
+    const fetchMock = vi.spyOn(global, "fetch");
+    supabaseFromMock.mockImplementation((table: string) => {
+      if (table === "activities") {
+        return activityInsertBuilder;
+      }
+      if (table === "flashcards") {
+        return cardsInsertBuilder;
+      }
+      if (table === "ai_requests") {
+        return aiRequestsBuilder;
+      }
+      return makeBuilder({ data: null, error: null });
+    });
+
+    const formData = new FormData();
+    formData.set("title", "Generated Flashcards");
+    formData.set("instructions", "Use only class notes.");
+    formData.set("card_count", "1");
+
+    await expectRedirect(
+      () => generateFlashcardsDraft("class-1", formData),
+      "/classes/class-1/activities/flashcards/activity-1/edit?created=1",
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(generateTextWithFallback).toHaveBeenCalledTimes(1);
+    expect(parseFlashcardsGenerationResponse).toHaveBeenCalledTimes(1);
+  });
+
   it("shows a friendly message when an internal redirect token is raised as an error", async () => {
     const supabaseFromMock = vi.fn();
     requireAuthenticatedUser.mockResolvedValue({

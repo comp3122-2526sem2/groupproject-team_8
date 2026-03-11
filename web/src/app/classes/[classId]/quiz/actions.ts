@@ -49,9 +49,7 @@ function getFormString(formData: FormData, key: string) {
 }
 
 function shouldUsePythonQuizBackend() {
-  return resolvePythonBackendEnabled(
-    process.env.PYTHON_BACKEND_QUIZ_ENABLED ?? process.env.PYTHON_BACKEND_ENABLED,
-  );
+  return resolvePythonBackendEnabled(process.env.PYTHON_BACKEND_QUIZ_ENABLED);
 }
 
 function isPythonBackendStrict() {

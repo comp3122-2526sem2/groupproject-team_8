@@ -46,6 +46,10 @@ type PythonClassApiError = Error & {
   code?: string;
 };
 
+type PythonMaterialDispatchError = Error & {
+  safeToRollbackMaterial?: boolean;
+};
+
 function shouldUsePythonClassesBackend() {
   return resolvePythonBackendEnabled(process.env.PYTHON_BACKEND_CLASSES_ENABLED);
 }
@@ -73,13 +77,26 @@ function resolvePythonBackendTimeoutMs() {
   return Math.floor(parsed);
 }
 
+function createPythonMaterialDispatchError(message: string, safeToRollbackMaterial: boolean) {
+  const error = new Error(message) as PythonMaterialDispatchError;
+  error.safeToRollbackMaterial = safeToRollbackMaterial;
+  return error;
+}
+
+function canRollbackMaterialAfterPythonDispatchFailure(error: unknown) {
+  return (
+    error instanceof Error &&
+    (error as PythonMaterialDispatchError).safeToRollbackMaterial === true
+  );
+}
+
 async function dispatchMaterialJobViaPythonBackend(input: {
   classId: string;
   materialId: string;
 }) {
   const baseUrl = process.env.PYTHON_BACKEND_URL?.trim();
   if (!baseUrl) {
-    throw new Error("PYTHON_BACKEND_URL is not configured.");
+    throw createPythonMaterialDispatchError("PYTHON_BACKEND_URL is not configured.", true);
   }
 
   const apiKey = process.env.PYTHON_BACKEND_API_KEY?.trim();
@@ -108,11 +125,13 @@ async function dispatchMaterialJobViaPythonBackend(input: {
 
     let payload: {
       ok?: boolean;
+      data?: { enqueued?: boolean };
       error?: { message?: string };
     } | null = null;
     try {
       payload = (await response.json()) as {
         ok?: boolean;
+        data?: { enqueued?: boolean };
         error?: { message?: string };
       };
     } catch {
@@ -120,16 +139,28 @@ async function dispatchMaterialJobViaPythonBackend(input: {
     }
 
     if (!response.ok || !payload?.ok) {
-      throw new Error(
+      const safeToRollbackMaterial =
+        payload?.data?.enqueued === false || (response.status >= 400 && response.status < 500);
+      throw createPythonMaterialDispatchError(
         payload?.error?.message ??
           `Python backend material dispatch failed with status ${response.status}.`,
+        safeToRollbackMaterial,
       );
     }
   } catch (error) {
     if (didTimeout || (error instanceof Error && error.name === "AbortError")) {
-      throw new Error(`Python backend material dispatch timed out after ${timeoutMs}ms.`);
+      throw createPythonMaterialDispatchError(
+        `Python backend material dispatch timed out after ${timeoutMs}ms.`,
+        false,
+      );
     }
-    throw error instanceof Error ? error : new Error("Python backend material dispatch failed.");
+    if (error instanceof Error && "safeToRollbackMaterial" in error) {
+      throw error;
+    }
+    throw createPythonMaterialDispatchError(
+      error instanceof Error ? error.message : "Python backend material dispatch failed.",
+      false,
+    );
   } finally {
     clearTimeout(timer);
   }
@@ -538,9 +569,10 @@ async function uploadMaterialMutationInternal(
           materialId: materialRow.id,
         });
       } catch (error) {
-        // Python dispatch can enqueue before failing to trigger a worker, so we
-        // cannot safely assume the material was not queued.
-        shouldRollbackMaterialOnJobFailure = false;
+        // Only keep the material when dispatch failure is ambiguous (for
+        // example, timeout/5xx after potential enqueue). Deterministic
+        // pre-enqueue failures should roll back the upload.
+        shouldRollbackMaterialOnJobFailure = canRollbackMaterialAfterPythonDispatchFailure(error);
         if (isPythonBackendStrict()) {
           jobError = { message: error instanceof Error ? error.message : "Python dispatch failed." };
         } else {
