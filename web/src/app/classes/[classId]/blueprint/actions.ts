@@ -5,12 +5,8 @@ import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   DEFAULT_BLUEPRINT_SCHEMA_VERSION,
-  buildBlueprintPrompt,
-  parseBlueprintResponse,
 } from "@/lib/ai/blueprint";
 import type { BloomLevel, BlueprintPayload, BlueprintTopic } from "@/lib/ai/blueprint";
-import { generateTextWithFallback } from "@/lib/ai/providers";
-import { resolvePythonBackendEnabled, resolvePythonBackendStrict } from "@/lib/ai/python-migration";
 import { generateBlueprintViaPythonBackend } from "@/lib/ai/python-blueprint";
 import { retrieveMaterialContext } from "@/lib/materials/retrieval";
 import { requireVerifiedUser } from "@/lib/auth/session";
@@ -57,14 +53,6 @@ function parseTimeoutMs(value: string | undefined, fallbackMs: number) {
     return fallbackMs;
   }
   return Math.floor(parsed);
-}
-
-function shouldUsePythonBlueprintBackend() {
-  return resolvePythonBackendEnabled();
-}
-
-function isPythonBackendStrict() {
-  return resolvePythonBackendStrict();
 }
 
 function formatDuration(durationMs: number) {
@@ -682,67 +670,19 @@ export async function generateBlueprint(classId: string) {
   let usedLatencyMs: number | null = null;
   try {
     const generationTimeoutMs = requireRemainingBudget(startedAtMs);
-    let payload: BlueprintPayload;
-    if (shouldUsePythonBlueprintBackend()) {
-      try {
-        const pythonResult = await generateBlueprintViaPythonBackend({
-          classTitle: classRow.title,
-          subject: classRow.subject,
-          level: classRow.level,
-          materialCount: readyMaterials.length,
-          materialText,
-          timeoutMs: generationTimeoutMs,
-        });
-        payload = pythonResult.payload;
-        usedProvider = pythonResult.provider;
-        usedModel = pythonResult.model;
-        usedUsage = pythonResult.usage;
-        usedLatencyMs = pythonResult.latencyMs;
-      } catch (error) {
-        if (isPythonBackendStrict()) {
-          throw error;
-        }
-        const prompt = buildBlueprintPrompt({
-          classTitle: classRow.title,
-          subject: classRow.subject,
-          level: classRow.level,
-          materialCount: readyMaterials.length,
-          materialText,
-        });
-        const result = await generateTextWithFallback({
-          system: prompt.system,
-          user: prompt.user,
-          temperature: 0.2,
-          maxTokens: 8000,
-          timeoutMs: generationTimeoutMs,
-        });
-        usedProvider = result.provider;
-        usedModel = result.model;
-        usedUsage = result.usage;
-        usedLatencyMs = result.latencyMs;
-        payload = parseBlueprintResponse(result.content);
-      }
-    } else {
-      const prompt = buildBlueprintPrompt({
-        classTitle: classRow.title,
-        subject: classRow.subject,
-        level: classRow.level,
-        materialCount: readyMaterials.length,
-        materialText,
-      });
-      const result = await generateTextWithFallback({
-        system: prompt.system,
-        user: prompt.user,
-        temperature: 0.2,
-        maxTokens: 8000,
-        timeoutMs: generationTimeoutMs,
-      });
-      usedProvider = result.provider;
-      usedModel = result.model;
-      usedUsage = result.usage;
-      usedLatencyMs = result.latencyMs;
-      payload = parseBlueprintResponse(result.content);
-    }
+    const pythonResult = await generateBlueprintViaPythonBackend({
+      classTitle: classRow.title,
+      subject: classRow.subject,
+      level: classRow.level,
+      materialCount: readyMaterials.length,
+      materialText,
+      timeoutMs: generationTimeoutMs,
+    });
+    const payload: BlueprintPayload = pythonResult.payload;
+    usedProvider = pythonResult.provider;
+    usedModel = pythonResult.model;
+    usedUsage = pythonResult.usage;
+    usedLatencyMs = pythonResult.latencyMs;
 
     const { data: latestBlueprint } = await supabase
       .from("blueprints")

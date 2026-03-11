@@ -2,25 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateGroundedChatResponse } from "@/lib/chat/generate";
 
 const {
-  generateTextWithFallback,
   generateChatViaPythonBackend,
-  buildChatPrompt,
   loadPublishedBlueprintContext,
-  parseChatModelResponse,
   retrieveMaterialContext,
   createServerSupabaseClient,
 } = vi.hoisted(() => ({
-  generateTextWithFallback: vi.fn(),
   generateChatViaPythonBackend: vi.fn(),
-  buildChatPrompt: vi.fn(),
   loadPublishedBlueprintContext: vi.fn(),
-  parseChatModelResponse: vi.fn(),
   retrieveMaterialContext: vi.fn(),
   createServerSupabaseClient: vi.fn(),
-}));
-
-vi.mock("@/lib/ai/providers", () => ({
-  generateTextWithFallback,
 }));
 
 vi.mock("@/lib/ai/python-chat", () => ({
@@ -28,12 +18,7 @@ vi.mock("@/lib/ai/python-chat", () => ({
 }));
 
 vi.mock("@/lib/chat/context", () => ({
-  buildChatPrompt,
   loadPublishedBlueprintContext,
-}));
-
-vi.mock("@/lib/chat/validation", () => ({
-  parseChatModelResponse,
 }));
 
 vi.mock("@/lib/materials/retrieval", () => ({
@@ -48,7 +33,7 @@ describe("generateGroundedChatResponse", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     delete process.env.CHAT_GENERATION_MAX_TOKENS;
-    delete process.env.PYTHON_BACKEND_URL;
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
     delete process.env.PYTHON_BACKEND_CHAT_ENGINE;
     delete process.env.PYTHON_BACKEND_CHAT_TOOL_MODE;
     delete process.env.PYTHON_BACKEND_CHAT_TOOL_CATALOG;
@@ -72,17 +57,9 @@ describe("generateGroundedChatResponse", () => {
       blueprintContext: "Blueprint Context | Summary and topics",
     });
     retrieveMaterialContext.mockResolvedValue("Source 1 | Material snippet");
-    buildChatPrompt.mockReturnValue({ system: "system", user: "user" });
-    parseChatModelResponse.mockReturnValue({
-      safety: "ok",
-      answer: "Grounded response",
-      citations: [{ sourceLabel: "Source 1", rationale: "Based on class material." }],
-    });
   });
 
-  it("routes grounded chat generation through python backend when enabled", async () => {
-    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
-
+  it("routes grounded chat generation through python backend", async () => {
     generateChatViaPythonBackend.mockResolvedValue({
       payload: {
         safety: "ok",
@@ -121,65 +98,22 @@ describe("generateGroundedChatResponse", () => {
         }),
       }),
     );
-    expect(generateTextWithFallback).not.toHaveBeenCalled();
-    expect(parseChatModelResponse).not.toHaveBeenCalled();
   });
 
-  it("keeps grounded chat on local generation when python backend url is missing", async () => {
-    generateTextWithFallback.mockResolvedValue({
-      provider: "openai",
-      model: "gpt-5-mini",
-      content: "{}",
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-      latencyMs: 12,
-    });
+  it("returns a configuration error when python backend url is missing", async () => {
+    delete process.env.PYTHON_BACKEND_URL;
+    generateChatViaPythonBackend.mockRejectedValue(new Error("PYTHON_BACKEND_URL is not configured."));
 
-    await generateGroundedChatResponse({
-      classId: "class-1",
-      classTitle: "Physics",
-      userId: "student-1",
-      userMessage: "Can we review kinematics?",
-      transcript: [],
-      purpose: "student_chat_open_v2",
-    });
-
-    expect(generateChatViaPythonBackend).not.toHaveBeenCalled();
-    expect(generateTextWithFallback).toHaveBeenCalledTimes(1);
-    expect(parseChatModelResponse).toHaveBeenCalledTimes(1);
-  });
-
-  it("routes grounded chat generation through python backend when url is configured", async () => {
-    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
-
-    generateChatViaPythonBackend.mockResolvedValue({
-      payload: {
-        safety: "ok",
-        answer: "Grounded response",
-        citations: [{ sourceLabel: "Source 1", rationale: "Based on class material." }],
-      },
-      provider: "openrouter",
-      model: "or-model",
-      usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
-      latencyMs: 15,
-      orchestration: {
-        engine: "langgraph_v1",
-        tool_mode: "auto",
-        tool_calls: [],
-      },
-    });
-
-    await generateGroundedChatResponse({
-      classId: "class-1",
-      classTitle: "Physics",
-      userId: "student-1",
-      userMessage: "Can we review kinematics?",
-      transcript: [],
-      purpose: "student_chat_open_v2",
-    });
-
-    expect(generateChatViaPythonBackend).toHaveBeenCalledTimes(1);
-    expect(generateTextWithFallback).not.toHaveBeenCalled();
-    expect(parseChatModelResponse).not.toHaveBeenCalled();
+    await expect(
+      generateGroundedChatResponse({
+        classId: "class-1",
+        classTitle: "Physics",
+        userId: "student-1",
+        userMessage: "Can we review kinematics?",
+        transcript: [],
+        purpose: "student_chat_open_v2",
+      }),
+    ).rejects.toThrow("PYTHON_BACKEND_URL is not configured.");
   });
 
   it("passes langgraph engine and tool mode hints to python chat adapter when configured", async () => {
@@ -244,15 +178,17 @@ describe("generateGroundedChatResponse", () => {
     ).rejects.toThrow("Python backend chat request failed with 502.");
 
     expect(generateChatViaPythonBackend).toHaveBeenCalledTimes(1);
-    expect(generateTextWithFallback).not.toHaveBeenCalled();
-    expect(parseChatModelResponse).not.toHaveBeenCalled();
   });
 
   it("uses a default max token budget above other generators", async () => {
-    generateTextWithFallback.mockResolvedValue({
+    generateChatViaPythonBackend.mockResolvedValue({
+      payload: {
+        safety: "ok",
+        answer: "Grounded response",
+        citations: [],
+      },
       provider: "openai",
       model: "gpt-5-mini",
-      content: "{}",
       usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
       latencyMs: 12,
     });
@@ -266,7 +202,7 @@ describe("generateGroundedChatResponse", () => {
       purpose: "student_chat_open_v2",
     });
 
-    expect(generateTextWithFallback).toHaveBeenCalledWith(
+    expect(generateChatViaPythonBackend).toHaveBeenCalledWith(
       expect.objectContaining({
         maxTokens: 9000,
       }),
@@ -274,7 +210,7 @@ describe("generateGroundedChatResponse", () => {
   });
 
   it("returns a friendly message when generation throws internal redirect tokens", async () => {
-    generateTextWithFallback.mockRejectedValue(new Error("NEXT_REDIRECT"));
+    generateChatViaPythonBackend.mockRejectedValue(new Error("NEXT_REDIRECT"));
 
     await expect(
       generateGroundedChatResponse({

@@ -7,7 +7,7 @@ import {
   saveDraft,
 } from "@/app/classes/[classId]/blueprint/actions";
 import { redirect } from "next/navigation";
-import { buildBlueprintPrompt, parseBlueprintResponse } from "@/lib/ai/blueprint";
+import { parseBlueprintResponse } from "@/lib/ai/blueprint";
 import { generateTextWithFallback } from "@/lib/ai/providers";
 import { retrieveMaterialContext } from "@/lib/materials/retrieval";
 import { requireVerifiedUser } from "@/lib/auth/session";
@@ -148,12 +148,8 @@ function mockRequireVerifiedUserSuccess() {
 describe("generateBlueprint", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    delete process.env.PYTHON_BACKEND_ENABLED;
-    delete process.env.PYTHON_BACKEND_BLUEPRINT_ENABLED;
-    delete process.env.PYTHON_BACKEND_URL;
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
     delete process.env.PYTHON_BACKEND_API_KEY;
-    delete process.env.PYTHON_BACKEND_STRICT;
-    delete process.env.PYTHON_BACKEND_MODE;
     mockRequireVerifiedUserSuccess();
     supabaseRpcMock.mockResolvedValue({ data: null, error: null });
   });
@@ -290,8 +286,14 @@ describe("generateBlueprint", () => {
     });
 
     vi.mocked(retrieveMaterialContext).mockResolvedValue("context");
-    vi.mocked(generateTextWithFallback).mockRejectedValue(
-      new Error("OpenRouter generation request timed out after 1000ms."),
+    vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      makeJsonResponse(
+        {
+          ok: false,
+          error: { message: "OpenRouter generation request timed out after 1000ms." },
+        },
+        false,
+      ),
     );
 
     await expectRedirect(
@@ -350,32 +352,30 @@ describe("generateBlueprint", () => {
       return makeBuilder({ data: null, error: null });
     });
 
-    vi.mocked(generateTextWithFallback).mockResolvedValue({
-      provider: "openrouter",
-      model: "model",
-      content: '{"summary":"ok"}',
-      usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
-      latencyMs: 10,
-    });
-
-    vi.mocked(buildBlueprintPrompt).mockReturnValue({
-      system: "system",
-      user: "user",
-    });
-
     vi.mocked(retrieveMaterialContext).mockResolvedValue("context");
-
-    vi.mocked(parseBlueprintResponse).mockReturnValue({
-      summary: "Summary",
-      topics: [
-        {
-          key: "topic-1",
-          title: "Limits",
-          sequence: 1,
-          objectives: [{ statement: "Define limits." }],
+    vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      makeJsonResponse({
+        ok: true,
+        data: {
+          payload: {
+            schemaVersion: "v2",
+            summary: "Summary",
+            topics: [
+              {
+                key: "topic-1",
+                title: "Limits",
+                sequence: 1,
+                objectives: [{ statement: "Define limits." }],
+              },
+            ],
+          },
+          provider: "openrouter",
+          model: "model",
+          usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+          latency_ms: 10,
         },
-      ],
-    });
+      }),
+    );
 
     await expectRedirect(
       () => generateBlueprint("class-1"),
@@ -391,8 +391,6 @@ describe("generateBlueprint", () => {
   });
 
   it("routes blueprint generation through python backend when enabled", async () => {
-    process.env.PYTHON_BACKEND_ENABLED = "true";
-    process.env.PYTHON_BACKEND_BLUEPRINT_ENABLED = "true";
     process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
     process.env.PYTHON_BACKEND_API_KEY = "secret";
 
@@ -484,16 +482,14 @@ describe("generateBlueprint", () => {
     );
   });
 
-  it("keeps blueprint generation on local fallback when only PYTHON_BACKEND_ENABLED is set", async () => {
-    process.env.PYTHON_BACKEND_ENABLED = "true";
-
+  it("returns a configuration error when python backend url is missing", async () => {
+    delete process.env.PYTHON_BACKEND_URL;
     supabaseAuth.getUser.mockResolvedValueOnce({ data: { user: { id: "u1" } } });
     let blueprintCall = 0;
     let topicCall = 0;
     const latestBlueprintBuilder = makeBuilder({ data: null, error: null });
     const insertBlueprintBuilder = makeBuilder({ data: { id: "bp-1" }, error: null });
 
-    const fetchMock = vi.spyOn(global, "fetch");
     supabaseFromMock.mockImplementation((table: string) => {
       if (table === "classes") {
         return makeBuilder({
@@ -536,38 +532,12 @@ describe("generateBlueprint", () => {
       return makeBuilder({ data: null, error: null });
     });
 
-    vi.mocked(buildBlueprintPrompt).mockReturnValue({
-      system: "system",
-      user: "user",
-    });
     vi.mocked(retrieveMaterialContext).mockResolvedValue("context");
-    vi.mocked(generateTextWithFallback).mockResolvedValue({
-      provider: "openrouter",
-      model: "model",
-      content: '{"summary":"ok"}',
-      usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
-      latencyMs: 10,
-    });
-    vi.mocked(parseBlueprintResponse).mockReturnValue({
-      summary: "Summary",
-      topics: [
-        {
-          key: "topic-1",
-          title: "Limits",
-          sequence: 1,
-          objectives: [{ statement: "Define limits." }],
-        },
-      ],
-    });
 
     await expectRedirect(
       () => generateBlueprint("class-1"),
-      "/classes/class-1/blueprint?generated=1",
+      "/classes/class-1/blueprint?error=PYTHON_BACKEND_URL%20is%20not%20configured.",
     );
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(generateTextWithFallback).toHaveBeenCalledTimes(1);
-    expect(parseBlueprintResponse).toHaveBeenCalledTimes(1);
   });
 });
 

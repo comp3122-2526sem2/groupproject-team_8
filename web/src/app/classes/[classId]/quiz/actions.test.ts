@@ -129,12 +129,8 @@ async function expectRedirect(action: () => Promise<void> | void, path: string) 
 describe("quiz actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    delete process.env.PYTHON_BACKEND_ENABLED;
-    delete process.env.PYTHON_BACKEND_QUIZ_ENABLED;
-    delete process.env.PYTHON_BACKEND_URL;
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
     delete process.env.PYTHON_BACKEND_API_KEY;
-    delete process.env.PYTHON_BACKEND_STRICT;
-    delete process.env.PYTHON_BACKEND_MODE;
     getClassAccess.mockResolvedValue({
       found: true,
       isTeacher: true,
@@ -338,24 +334,27 @@ describe("quiz actions", () => {
       blueprintContext: "Limits and derivatives",
     });
     retrieveMaterialContext.mockResolvedValue("Material context");
-    buildQuizGenerationPrompt.mockReturnValue({ system: "system", user: "user" });
-    generateTextWithFallback.mockResolvedValue({
-      provider: "openai",
-      model: "gpt-5-mini",
-      content: "{}",
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-      latencyMs: 12,
-    });
-    parseQuizGenerationResponse.mockReturnValue({
-      questions: [
-        {
-          question: "1 + 1",
-          choices: ["1", "2", "3", "4"],
-          answer: "2",
-          explanation: "Basic addition.",
+    vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      makeJsonResponse({
+        ok: true,
+        data: {
+          payload: {
+            questions: [
+              {
+                question: "1 + 1",
+                choices: ["1", "2", "3", "4"],
+                answer: "2",
+                explanation: "Basic addition.",
+              },
+            ],
+          },
+          provider: "openai",
+          model: "gpt-5-mini",
+          usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+          latency_ms: 12,
         },
-      ],
-    });
+      }),
+    );
 
     const activityInsertBuilder = makeBuilder({ data: { id: "activity-1" }, error: null });
     const questionInsertBuilder = makeBuilder({ error: null });
@@ -390,14 +389,13 @@ describe("quiz actions", () => {
         class_id: "class-1",
         user_id: "teacher-1",
         provider: "openai",
+        model: "gpt-5-mini",
         status: "success",
       }),
     );
   });
 
   it("routes quiz generation through python backend when enabled", async () => {
-    process.env.PYTHON_BACKEND_ENABLED = "true";
-    process.env.PYTHON_BACKEND_QUIZ_ENABLED = "true";
     process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
     process.env.PYTHON_BACKEND_API_KEY = "secret";
 
@@ -478,9 +476,8 @@ describe("quiz actions", () => {
     );
   });
 
-  it("keeps quiz generation on local fallback when only PYTHON_BACKEND_ENABLED is set", async () => {
-    process.env.PYTHON_BACKEND_ENABLED = "true";
-
+  it("returns a configuration error when python backend url is missing", async () => {
+    delete process.env.PYTHON_BACKEND_URL;
     const supabaseFromMock = vi.fn();
     requireAuthenticatedUser.mockResolvedValue({
       supabase: { from: supabaseFromMock },
@@ -497,29 +494,10 @@ describe("quiz actions", () => {
       blueprintContext: "Limits and derivatives",
     });
     retrieveMaterialContext.mockResolvedValue("Material context");
-    buildQuizGenerationPrompt.mockReturnValue({ system: "system", user: "user" });
-    generateTextWithFallback.mockResolvedValue({
-      provider: "openai",
-      model: "gpt-5-mini",
-      content: "{}",
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-      latencyMs: 12,
-    });
-    parseQuizGenerationResponse.mockReturnValue({
-      questions: [
-        {
-          question: "1 + 1",
-          choices: ["1", "2", "3", "4"],
-          answer: "2",
-          explanation: "Basic addition.",
-        },
-      ],
-    });
 
     const activityInsertBuilder = makeBuilder({ data: { id: "activity-1" }, error: null });
     const questionInsertBuilder = makeBuilder({ error: null });
     const aiRequestsBuilder = makeBuilder({ error: null });
-    const fetchMock = vi.spyOn(global, "fetch");
     supabaseFromMock.mockImplementation((table: string) => {
       if (table === "activities") {
         return activityInsertBuilder;
@@ -540,12 +518,8 @@ describe("quiz actions", () => {
 
     await expectRedirect(
       () => generateQuizDraft("class-1", formData),
-      "/classes/class-1/activities/quiz/activity-1/edit?created=1",
+      "/classes/class-1/activities/quiz/new?error=PYTHON_BACKEND_URL%20is%20not%20configured.",
     );
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(generateTextWithFallback).toHaveBeenCalledTimes(1);
-    expect(parseQuizGenerationResponse).toHaveBeenCalledTimes(1);
   });
 
   it("shows a friendly message when an internal redirect token is raised as an error", async () => {
@@ -565,17 +539,15 @@ describe("quiz actions", () => {
       blueprintContext: "Limits and derivatives",
     });
     retrieveMaterialContext.mockResolvedValue("Material context");
-    buildQuizGenerationPrompt.mockReturnValue({ system: "system", user: "user" });
-    generateTextWithFallback.mockResolvedValue({
-      provider: "openai",
-      model: "gpt-5-mini",
-      content: "{}",
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-      latencyMs: 12,
-    });
-    parseQuizGenerationResponse.mockImplementation(() => {
-      throw new Error("NEXT_REDIRECT");
-    });
+    vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      makeJsonResponse(
+        {
+          ok: false,
+          error: { message: "NEXT_REDIRECT" },
+        },
+        false,
+      ),
+    );
 
     const aiRequestsBuilder = makeBuilder({ error: null });
 
@@ -621,17 +593,17 @@ describe("quiz actions", () => {
       blueprintContext: "Limits and derivatives",
     });
     retrieveMaterialContext.mockResolvedValue("Material context");
-    buildQuizGenerationPrompt.mockReturnValue({ system: "system", user: "user" });
-    generateTextWithFallback.mockResolvedValue({
-      provider: "openai",
-      model: "gpt-5-mini",
-      content: "{}",
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-      latencyMs: 12,
-    });
-    parseQuizGenerationResponse.mockImplementation(() => {
-      throw new Error("Invalid quiz JSON: questions[0].choices must contain exactly 4 options.");
-    });
+    vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      makeJsonResponse(
+        {
+          ok: false,
+          error: {
+            message: "Invalid quiz JSON: questions[0].choices must contain exactly 4 options.",
+          },
+        },
+        false,
+      ),
+    );
 
     const aiRequestsBuilder = makeBuilder({ error: null });
 
@@ -670,24 +642,27 @@ describe("quiz actions", () => {
       blueprintContext: "Limits and derivatives",
     });
     retrieveMaterialContext.mockResolvedValue("Material context");
-    buildQuizGenerationPrompt.mockReturnValue({ system: "system", user: "user" });
-    generateTextWithFallback.mockResolvedValue({
-      provider: "openai",
-      model: "gpt-5-mini",
-      content: "{}",
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-      latencyMs: 12,
-    });
-    parseQuizGenerationResponse.mockReturnValue({
-      questions: [
-        {
-          question: "1 + 1",
-          choices: ["1", "2", "3", "4"],
-          answer: "2",
-          explanation: "Basic addition.",
+    vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      makeJsonResponse({
+        ok: true,
+        data: {
+          payload: {
+            questions: [
+              {
+                question: "1 + 1",
+                choices: ["1", "2", "3", "4"],
+                answer: "2",
+                explanation: "Basic addition.",
+              },
+            ],
+          },
+          provider: "openai",
+          model: "gpt-5-mini",
+          usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+          latency_ms: 12,
         },
-      ],
-    });
+      }),
+    );
 
     const activityInsertBuilder = makeBuilder({ data: { id: "activity-1" }, error: null });
     const activityCleanupBuilder = makeBuilder({ error: null });

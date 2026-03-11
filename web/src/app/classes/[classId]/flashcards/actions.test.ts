@@ -104,12 +104,8 @@ async function expectRedirect(action: () => Promise<void> | void, path: string) 
 describe("flashcards actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    delete process.env.PYTHON_BACKEND_ENABLED;
-    delete process.env.PYTHON_BACKEND_FLASHCARDS_ENABLED;
-    delete process.env.PYTHON_BACKEND_URL;
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
     delete process.env.PYTHON_BACKEND_API_KEY;
-    delete process.env.PYTHON_BACKEND_STRICT;
-    delete process.env.PYTHON_BACKEND_MODE;
     getClassAccess.mockResolvedValue({
       found: true,
       isTeacher: true,
@@ -121,14 +117,6 @@ describe("flashcards actions", () => {
       blueprintContext: "Limits and derivatives",
     });
     retrieveMaterialContext.mockResolvedValue("Material context");
-    buildFlashcardsGenerationPrompt.mockReturnValue({ system: "system", user: "user" });
-    generateTextWithFallback.mockResolvedValue({
-      provider: "openai",
-      model: "gpt-5-mini",
-      content: "{}",
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-      latencyMs: 12,
-    });
   });
 
   it("redirects to edit page after successfully generating a draft", async () => {
@@ -137,14 +125,25 @@ describe("flashcards actions", () => {
       supabase: { from: supabaseFromMock },
       user: { id: "teacher-1" },
     });
-    parseFlashcardsGenerationResponse.mockReturnValue({
-      cards: [
-        {
-          front: "What is 1 + 1?",
-          back: "2",
+    vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      makeJsonResponse({
+        ok: true,
+        data: {
+          payload: {
+            cards: [
+              {
+                front: "What is 1 + 1?",
+                back: "2",
+              },
+            ],
+          },
+          provider: "openai",
+          model: "gpt-5-mini",
+          usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+          latency_ms: 12,
         },
-      ],
-    });
+      }),
+    );
 
     const activityInsertBuilder = makeBuilder({ data: { id: "activity-1" }, error: null });
     const cardsInsertBuilder = makeBuilder({ error: null });
@@ -179,14 +178,13 @@ describe("flashcards actions", () => {
         class_id: "class-1",
         user_id: "teacher-1",
         provider: "openai",
+        model: "gpt-5-mini",
         status: "success",
       }),
     );
   });
 
   it("routes flashcards generation through python backend when enabled", async () => {
-    process.env.PYTHON_BACKEND_ENABLED = "true";
-    process.env.PYTHON_BACKEND_FLASHCARDS_ENABLED = "true";
     process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
     process.env.PYTHON_BACKEND_API_KEY = "secret";
 
@@ -256,35 +254,17 @@ describe("flashcards actions", () => {
     fetchMock.mockRestore();
   });
 
-  it("keeps flashcards generation on local fallback when only PYTHON_BACKEND_ENABLED is set", async () => {
-    process.env.PYTHON_BACKEND_ENABLED = "true";
-
+  it("returns a configuration error when python backend url is missing", async () => {
+    delete process.env.PYTHON_BACKEND_URL;
     const supabaseFromMock = vi.fn();
     requireAuthenticatedUser.mockResolvedValue({
       supabase: { from: supabaseFromMock },
       user: { id: "teacher-1" },
     });
-    buildFlashcardsGenerationPrompt.mockReturnValue({ system: "system", user: "user" });
-    generateTextWithFallback.mockResolvedValue({
-      provider: "openai",
-      model: "gpt-5-mini",
-      content: "{}",
-      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
-      latencyMs: 12,
-    });
-    parseFlashcardsGenerationResponse.mockReturnValue({
-      cards: [
-        {
-          front: "What is 1 + 1?",
-          back: "2",
-        },
-      ],
-    });
 
     const activityInsertBuilder = makeBuilder({ data: { id: "activity-1" }, error: null });
     const cardsInsertBuilder = makeBuilder({ error: null });
     const aiRequestsBuilder = makeBuilder({ error: null });
-    const fetchMock = vi.spyOn(global, "fetch");
     supabaseFromMock.mockImplementation((table: string) => {
       if (table === "activities") {
         return activityInsertBuilder;
@@ -305,12 +285,8 @@ describe("flashcards actions", () => {
 
     await expectRedirect(
       () => generateFlashcardsDraft("class-1", formData),
-      "/classes/class-1/activities/flashcards/activity-1/edit?created=1",
+      "/classes/class-1/activities/flashcards/new?error=PYTHON_BACKEND_URL%20is%20not%20configured.",
     );
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(generateTextWithFallback).toHaveBeenCalledTimes(1);
-    expect(parseFlashcardsGenerationResponse).toHaveBeenCalledTimes(1);
   });
 
   it("shows a friendly message when an internal redirect token is raised as an error", async () => {
@@ -319,9 +295,15 @@ describe("flashcards actions", () => {
       supabase: { from: supabaseFromMock },
       user: { id: "teacher-1" },
     });
-    parseFlashcardsGenerationResponse.mockImplementation(() => {
-      throw new Error("NEXT_REDIRECT");
-    });
+    vi.spyOn(global, "fetch").mockResolvedValueOnce(
+      makeJsonResponse(
+        {
+          ok: false,
+          error: { message: "NEXT_REDIRECT" },
+        },
+        false,
+      ),
+    );
 
     const aiRequestsBuilder = makeBuilder({ error: null });
 

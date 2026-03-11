@@ -2,8 +2,6 @@
 
 import { redirect } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
-import { generateTextWithFallback } from "@/lib/ai/providers";
-import { resolvePythonBackendEnabled, resolvePythonBackendStrict } from "@/lib/ai/python-migration";
 import { generateQuizViaPythonBackend } from "@/lib/ai/python-quiz";
 import {
   createWholeClassAssignment,
@@ -21,7 +19,6 @@ import type { QuizAttemptSubmissionContent } from "@/lib/activities/types";
 import { loadPublishedBlueprintContext } from "@/lib/chat/context";
 import { retrieveMaterialContext } from "@/lib/materials/retrieval";
 import { gradeQuizAttempt } from "@/lib/quiz/grading";
-import { buildQuizGenerationPrompt, parseQuizGenerationResponse } from "@/lib/quiz/generation";
 import {
   DEFAULT_QUIZ_QUESTION_COUNT,
   parseDueAt,
@@ -46,14 +43,6 @@ function getFormString(formData: FormData, key: string) {
     return "";
   }
   return value.trim();
-}
-
-function shouldUsePythonQuizBackend() {
-  return resolvePythonBackendEnabled();
-}
-
-function isPythonBackendStrict() {
-  return resolvePythonBackendStrict();
 }
 
 function toFriendlyQuizGenerationError(error: unknown) {
@@ -171,75 +160,18 @@ export async function generateQuizDraft(classId: string, formData: FormData) {
     const blueprintContext = await loadPublishedBlueprintContext(classId);
     const retrievalQuery = `Generate ${questionCount} multiple choice quiz questions. ${instructions}`;
     const materialContext = await retrieveMaterialContext(classId, retrievalQuery);
-    let trimmedQuestions: {
-      question: string;
-      choices: string[];
-      answer: string;
-      explanation: string;
-    }[];
-    if (shouldUsePythonQuizBackend()) {
-      try {
-        const pythonResult = await generateQuizViaPythonBackend({
-          classTitle: role.classTitle,
-          questionCount,
-          instructions,
-          blueprintContext: blueprintContext.blueprintContext,
-          materialContext,
-        });
-        usedProvider = pythonResult.provider;
-        usedModel = pythonResult.model;
-        usedUsage = pythonResult.usage;
-        usedLatencyMs = pythonResult.latencyMs;
-        trimmedQuestions = pythonResult.payload.questions.slice(0, questionCount);
-      } catch (error) {
-        if (isPythonBackendStrict()) {
-          throw error;
-        }
-        const prompt = buildQuizGenerationPrompt({
-          classTitle: role.classTitle,
-          questionCount,
-          instructions,
-          blueprintContext: blueprintContext.blueprintContext,
-          materialContext,
-        });
-
-        const result = await generateTextWithFallback({
-          system: prompt.system,
-          user: prompt.user,
-          temperature: 0.2,
-          maxTokens: 8000,
-        });
-        usedProvider = result.provider;
-        usedModel = result.model;
-        usedUsage = result.usage;
-        usedLatencyMs = result.latencyMs;
-
-        const payload = parseQuizGenerationResponse(result.content);
-        trimmedQuestions = payload.questions.slice(0, questionCount);
-      }
-    } else {
-      const prompt = buildQuizGenerationPrompt({
-        classTitle: role.classTitle,
-        questionCount,
-        instructions,
-        blueprintContext: blueprintContext.blueprintContext,
-        materialContext,
-      });
-
-      const result = await generateTextWithFallback({
-        system: prompt.system,
-        user: prompt.user,
-        temperature: 0.2,
-        maxTokens: 8000,
-      });
-      usedProvider = result.provider;
-      usedModel = result.model;
-      usedUsage = result.usage;
-      usedLatencyMs = result.latencyMs;
-
-      const payload = parseQuizGenerationResponse(result.content);
-      trimmedQuestions = payload.questions.slice(0, questionCount);
-    }
+    const pythonResult = await generateQuizViaPythonBackend({
+      classTitle: role.classTitle,
+      questionCount,
+      instructions,
+      blueprintContext: blueprintContext.blueprintContext,
+      materialContext,
+    });
+    usedProvider = pythonResult.provider;
+    usedModel = pythonResult.model;
+    usedUsage = pythonResult.usage;
+    usedLatencyMs = pythonResult.latencyMs;
+    const trimmedQuestions = pythonResult.payload.questions.slice(0, questionCount);
 
     if (trimmedQuestions.length === 0) {
       throw new Error("The quiz generator returned no valid questions.");
