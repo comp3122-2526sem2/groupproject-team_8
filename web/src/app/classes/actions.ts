@@ -51,7 +51,7 @@ type PythonMaterialDispatchError = Error & {
 };
 
 function shouldUsePythonClassesBackend() {
-  return resolvePythonBackendEnabled(process.env.PYTHON_BACKEND_CLASSES_ENABLED);
+  return resolvePythonBackendEnabled();
 }
 
 function resolveMaterialWorkerBackend() {

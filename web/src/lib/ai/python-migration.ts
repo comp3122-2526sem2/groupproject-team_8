@@ -1,22 +1,16 @@
 import "server-only";
 
-export type PythonBackendMode = "hybrid" | "python_only";
+export type PythonBackendMode = "python_only";
 
 export function isPythonOnlyMode() {
-  return resolvePythonBackendMode() === "python_only";
+  return resolvePythonBackendEnabled();
 }
 
-export function resolvePythonBackendEnabled(featureFlagValue: string | undefined) {
-  if (isPythonOnlyMode()) {
-    return true;
-  }
-  return normalizeBooleanEnv(featureFlagValue, false);
+export function resolvePythonBackendEnabled() {
+  return Boolean(process.env.PYTHON_BACKEND_URL?.trim());
 }
 
 export function resolvePythonBackendStrict() {
-  if (isPythonOnlyMode()) {
-    return true;
-  }
   return normalizeBooleanEnv(process.env.PYTHON_BACKEND_STRICT, false);
 }
 
@@ -32,12 +26,4 @@ export function normalizeBooleanEnv(value: string | undefined, fallback: boolean
     return false;
   }
   return fallback;
-}
-
-function resolvePythonBackendMode(): PythonBackendMode {
-  const value = process.env.PYTHON_BACKEND_MODE?.trim().toLowerCase();
-  if (value === "python_only") {
-    return "python_only";
-  }
-  return "hybrid";
 }

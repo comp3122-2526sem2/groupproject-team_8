@@ -646,7 +646,8 @@ describe("class actions", () => {
   });
 
   it("keeps uploaded material when python dispatch fails in strict mode", async () => {
-    process.env.PYTHON_BACKEND_MODE = "python_only";
+    process.env.PYTHON_BACKEND_ENABLED = "true";
+    process.env.PYTHON_BACKEND_STRICT = "true";
     process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
 
     const file = new File([Buffer.from("hello")], "lecture.pdf", {
@@ -695,7 +696,9 @@ describe("class actions", () => {
   });
 
   it("rolls back uploaded material when python dispatch fails before enqueue in strict mode", async () => {
-    process.env.PYTHON_BACKEND_MODE = "python_only";
+    process.env.PYTHON_BACKEND_ENABLED = "true";
+    process.env.PYTHON_BACKEND_STRICT = "true";
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
 
     const file = new File([Buffer.from("hello")], "lecture.pdf", {
       type: "application/pdf",
@@ -706,6 +709,15 @@ describe("class actions", () => {
 
     vi.mocked(detectMaterialKind).mockReturnValue("pdf");
     vi.mocked(sanitizeFilename).mockReturnValue("lecture.pdf");
+    vi.spyOn(global, "fetch").mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        ok: false,
+        data: { enqueued: false },
+        error: { message: "invalid request" },
+      }),
+    } as Response);
 
     supabaseFromMock.mockImplementation((table: string) => {
       if (table === "classes") {
@@ -726,7 +738,7 @@ describe("class actions", () => {
     await expectRedirect(
       () => uploadMaterial("class-1", formData),
       `/classes/class-1?error=${encodeURIComponent(
-        "Failed to queue material processing: PYTHON_BACKEND_URL is not configured.",
+        "Failed to queue material processing: invalid request",
       )}`,
     );
 

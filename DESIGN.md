@@ -97,11 +97,8 @@ Student Flow
 
 - Next.js App: UI, routing, and role based layouts.
 - API Layer: server actions or API routes for all data writes.
-- Python Backend (strangler path): optional internal AI orchestration service (`backend/`) with
-  deterministic envelopes (`{ ok, data, error, meta }`) consumed by Next via adapter flags.
-  - Migration operating modes:
-    - `PYTHON_BACKEND_MODE=hybrid` (default): selective routing with Next-side fallbacks.
-    - `PYTHON_BACKEND_MODE=python_only`: enforce Python backend for AI, class workflows, chat workspace, and material dispatch paths.
+- Python Backend: internal AI and workflow orchestration service (`backend/`) with
+  deterministic envelopes (`{ ok, data, error, meta }`) consumed by Next.
   - Auth posture:
     - Python backend fails closed when `PYTHON_BACKEND_API_KEY` is missing, unless explicitly
       overridden by `PYTHON_BACKEND_ALLOW_UNAUTHENTICATED_REQUESTS=true` for local-only use.
@@ -161,8 +158,7 @@ Student Flow
 - Background processing is queue-driven on Supabase (`pgmq` + Supabase Cron + Edge Function worker).
 - Worker flow: upload -> enqueue -> process -> chunk -> embed -> status update (`ready` / `failed`).
 - Processing is text-only for RAG ingestion: extract text from PDF/DOCX/PPTX, then chunk and embed.
-- In `python_only` mode, `POST /api/materials/process` in Next proxies to Python
-  `POST /v1/materials/process` rather than executing local legacy processor logic.
+- `POST /api/materials/process` in Next proxies to Python `POST /v1/materials/process`.
 - Blueprint generation retrieves top-ranked chunks with source metadata instead of raw concatenation.
 - Prompt quality and grounding behavior are environment-tunable (`AI_PROMPT_QUALITY_PROFILE`,
   `AI_GROUNDING_MODE`) for safe rollout.

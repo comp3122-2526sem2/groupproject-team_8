@@ -143,39 +143,23 @@ Legacy fallback names (optional):
 - `OPENROUTER_APP_NAME`
 - `OPENROUTER_BASE_URL` (optional; defaults to OpenRouter API)
 
-### Optional Python AI backend adapter
+### Required Python backend integration
 
-- `PYTHON_BACKEND_ENABLED=false` (set `true` to route AI generation/embeddings via Python service)
-- `PYTHON_BACKEND_MODE=hybrid` (`hybrid` keeps Next fallbacks; `python_only` enforces Python backend for AI + class create/join + class chat workspace + material dispatch)
-- `PYTHON_BACKEND_CLASSES_ENABLED=false` (set `true` to route class create/join through Python endpoints in hybrid mode)
-- `PYTHON_BACKEND_BLUEPRINT_ENABLED=false` (set `true` to route blueprint generation domain to Python endpoint)
-- `PYTHON_BACKEND_QUIZ_ENABLED=false` (set `true` to route quiz generation domain to Python endpoint)
-- `PYTHON_BACKEND_FLASHCARDS_ENABLED=false` (set `true` to route flashcards generation domain to Python endpoint)
-- `PYTHON_BACKEND_CHAT_ENABLED=false` (set `true` to route grounded chat generation domain to Python endpoint)
-- `PYTHON_BACKEND_CHAT_WORKSPACE_ENABLED=false` (set `true` to route class chat workspace session/message list/send domain to Python endpoints in hybrid mode)
 - `PYTHON_BACKEND_CHAT_ENGINE=direct_v1` (`direct_v1` or `langgraph_v1` for Python chat orchestration)
 - `PYTHON_BACKEND_CHAT_TOOL_MODE=off` (`off`, `plan`, or `auto` tool-planning mode forwarded to Python chat domain)
 - `PYTHON_BACKEND_CHAT_TOOL_CATALOG=grounding_context.read,memory.search,memory.save` (comma-separated tools exposed to chat orchestration)
-- `PYTHON_BACKEND_STRICT=false` (set `true` to fail fast instead of falling back to local Next adapters; implied when `PYTHON_BACKEND_MODE=python_only`)
 - `PYTHON_BACKEND_URL` (for example `https://python-backend.example.com`)
 - `PYTHON_BACKEND_API_KEY` (if Python service requires API key auth)
 - `PYTHON_BACKEND_MATERIAL_TIMEOUT_MS=15000` (web -> python material-dispatch timeout)
-
-### Material processing backend
-
-- `MATERIAL_WORKER_BACKEND=supabase` (default recommended)
-- `MATERIAL_WORKER_BACKEND=python` routes queue/trigger through Python middleware:
-  `web -> python /v1/materials/dispatch -> supabase queue + edge function worker`
+- `PYTHON_BACKEND_CHAT_TIMEOUT_MS=45000` (web -> python chat workspace timeout)
 - Optional fallback-only route worker secret: `CRON_SECRET`
-- When `PYTHON_BACKEND_MODE=python_only`, material dispatch defaults to Python and `/api/materials/process` proxies to Python `/v1/materials/process`.
 
 ## 9. Deployment flow
 
 - Pull requests -> Preview deployment (staging env vars)
 - Merge to `main` -> Production deployment (production env vars)
 
-If `PYTHON_BACKEND_ENABLED=true` (or `PYTHON_BACKEND_MODE=python_only`), ensure preview deployments point to a preview/staging Python backend URL
-instead of production.
+Ensure preview deployments point to a preview/staging Python backend URL instead of production.
 
 When `PYTHON_BACKEND_CHAT_ENGINE=langgraph_v1`:
 - backend dependencies must include `langchain`, `langgraph`, and `langchain-openai`
@@ -209,4 +193,4 @@ For production, use:
 
 - App rollback: promote previous Vercel deployment
 - Database rollback: restore from Supabase backup/PITR or forward-fix with a new migration
-- Worker rollback: set `MATERIAL_WORKER_BACKEND=legacy` in Vercel and trigger `/api/materials/process` with `CRON_SECRET`
+- Worker rollback: rollback Python backend service deployment and re-run smoke tests

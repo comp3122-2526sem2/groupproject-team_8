@@ -108,7 +108,7 @@ async function proxyMaterialProcessToPython() {
   const baseUrl = process.env.PYTHON_BACKEND_URL?.trim();
   if (!baseUrl) {
     return NextResponse.json(
-      { error: "PYTHON_BACKEND_URL is not configured for python_only mode." },
+      { error: "PYTHON_BACKEND_URL is not configured." },
       { status: 500 },
     );
   }

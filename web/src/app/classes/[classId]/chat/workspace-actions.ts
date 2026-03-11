@@ -101,9 +101,7 @@ const CHAT_HISTORY_PAGE_SIZE = parsePositiveIntegerEnv(process.env.CHAT_HISTORY_
 const CHAT_CONTEXT_FETCH_LIMIT = Math.max(CHAT_COMPACTION_TRIGGER_TURNS * 3, CHAT_CONTEXT_RECENT_TURNS * 3, 180);
 
 function shouldUsePythonChatWorkspaceBackend() {
-  return resolvePythonBackendEnabled(
-    process.env.PYTHON_BACKEND_CHAT_WORKSPACE_ENABLED ?? process.env.PYTHON_BACKEND_CHAT_ENABLED,
-  );
+  return resolvePythonBackendEnabled();
 }
 
 function isPythonBackendStrict() {

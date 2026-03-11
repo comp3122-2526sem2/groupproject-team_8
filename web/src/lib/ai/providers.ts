@@ -169,7 +169,7 @@ function tryResolveProviderOrder() {
 }
 
 function shouldUsePythonBackend() {
-  return resolvePythonBackendEnabled(process.env.PYTHON_BACKEND_ENABLED);
+  return resolvePythonBackendEnabled();
 }
 
 function isPythonBackendStrict() {

@@ -102,7 +102,7 @@ function resolveChatMaxTokens() {
 }
 
 function shouldUsePythonChatBackend() {
-  return resolvePythonBackendEnabled(process.env.PYTHON_BACKEND_CHAT_ENABLED);
+  return resolvePythonBackendEnabled();
 }
 
 function isPythonBackendStrict() {

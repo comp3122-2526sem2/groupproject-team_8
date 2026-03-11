@@ -50,7 +50,7 @@ function getFormString(formData: FormData, key: string) {
 }
 
 function shouldUsePythonFlashcardsBackend() {
-  return resolvePythonBackendEnabled(process.env.PYTHON_BACKEND_FLASHCARDS_ENABLED);
+  return resolvePythonBackendEnabled();
 }
 
 function isPythonBackendStrict() {
