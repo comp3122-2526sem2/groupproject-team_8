@@ -37,6 +37,13 @@ class BlueprintsTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "assessmentIdeas must be non-empty"):
             parse_blueprint_response(raw)
 
+    def test_parse_blueprint_response_allows_invalid_objective_level_as_none(self) -> None:
+        raw = '{"summary":"S","topics":[{"key":"limits","title":"Limits","sequence":1,"prerequisites":[],"objectives":[{"statement":"Define limit","level":"understaand","evidence":[]}],"assessmentIdeas":["Quiz"],"evidence":[]}]} '
+        parsed = parse_blueprint_response(raw)
+        self.assertIsNone(
+            parsed["topics"][0]["objectives"][0]["level"],
+        )
+
     def test_generate_blueprint_uses_provider(self) -> None:
         settings = make_settings()
         req = BlueprintGenerateRequest(

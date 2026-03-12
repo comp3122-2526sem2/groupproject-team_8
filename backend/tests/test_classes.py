@@ -7,7 +7,9 @@ from unittest.mock import MagicMock, patch
 
 from app.classes import (
     ClassDomainError,
+    _escape_ilike_value,
     _extract_first_id,
+    _extract_first_id_by_join_code,
     _is_unique_violation,
     create_class,
     join_class,
@@ -20,6 +22,22 @@ class ClassesTests(unittest.TestCase):
     def test_extract_first_id(self) -> None:
         self.assertEqual(_extract_first_id([{"id": "abc"}]), "abc")
         self.assertIsNone(_extract_first_id([]))
+
+    def test_extract_first_id_by_join_code_uppercases_both_sides(self) -> None:
+        payload = [
+            {"id": "class-1", "join_code": "ab%_1"},
+            {"id": "class-2", "join_code": "other"},
+        ]
+        self.assertEqual(
+            _extract_first_id_by_join_code(payload, " AB%_1 "),
+            "class-1",
+        )
+        self.assertIsNone(
+            _extract_first_id_by_join_code(payload, " missing "),
+        )
+
+    def test_escape_ilike_value_escapes_like_wildcards(self) -> None:
+        self.assertEqual(_escape_ilike_value(r"a\B%_1"), r"a\\B\%\_1")
 
     def test_is_unique_violation(self) -> None:
         self.assertTrue(_is_unique_violation({"code": "23505"}))
@@ -42,7 +60,7 @@ class ClassesTests(unittest.TestCase):
             with self.assertRaises(ClassDomainError):
                 join_class(settings, request)
 
-    def test_join_class_uses_exact_join_code_lookup(self) -> None:
+    def test_join_class_uses_case_insensitive_join_code_lookup(self) -> None:
         settings = make_settings()
         request = ClassJoinRequest(user_id="u1", join_code=" ab%_1 ")
 
@@ -50,7 +68,7 @@ class ClassesTests(unittest.TestCase):
         profile_response.json.return_value = [{"account_type": "student"}]
 
         class_response = MagicMock(status_code=200)
-        class_response.json.return_value = [{"id": "class-1"}]
+        class_response.json.return_value = [{"id": "class-1", "join_code": "aB%_1"}]
 
         enrollment_response = MagicMock(status_code=201)
         enrollment_response.json.return_value = {}
@@ -68,8 +86,8 @@ class ClassesTests(unittest.TestCase):
 
         self.assertEqual(result.class_id, "class-1")
         lookup_url = client.get.call_args_list[1].args[0]
-        self.assertIn("join_code=eq.AB%25_1", lookup_url)
-        self.assertNotIn("join_code=ilike.", lookup_url)
+        self.assertIn("select=id,join_code", lookup_url)
+        self.assertIn("join_code=ilike.AB%5C%25%5C_1", lookup_url)
 
 
 if __name__ == "__main__":

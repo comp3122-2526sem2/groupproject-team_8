@@ -115,10 +115,11 @@ def join_class(settings: Settings, request: ClassJoinRequest) -> ClassJoinResult
                 status_code=404,
             )
 
-        encoded_join_code = quote(normalized_join_code, safe="")
+        escaped_join_code = _escape_ilike_value(normalized_join_code)
+        encoded_join_code = quote(escaped_join_code, safe="")
         classes_lookup_url = (
             f"{base_url}/rest/v1/classes"
-            f"?select=id&join_code=eq.{encoded_join_code}&limit=1"
+            f"?select=id,join_code&join_code=ilike.{encoded_join_code}&limit=10"
         )
         class_lookup_response = client.get(
             classes_lookup_url,
@@ -130,7 +131,9 @@ def join_class(settings: Settings, request: ClassJoinRequest) -> ClassJoinResult
                 class_lookup_payload) or "Failed to lookup class by join code."
             raise RuntimeError(message)
 
-        class_id = _extract_first_id(class_lookup_payload)
+        class_id = _extract_first_id_by_join_code(
+            class_lookup_payload, normalized_join_code
+        )
         if not class_id:
             raise ClassDomainError(
                 message="Invalid join code.",
@@ -225,6 +228,26 @@ def _extract_first_id(payload: Any) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
+
+
+def _extract_first_id_by_join_code(payload: Any, join_code: str) -> str | None:
+    if not isinstance(payload, list) or not payload:
+        return None
+    target_code = join_code.strip().upper()
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        row_join_code = row.get("join_code")
+        row_id = row.get("id")
+        if not isinstance(row_join_code, str) or not isinstance(row_id, str):
+            continue
+        if row_join_code.strip().upper() == target_code and row_id.strip():
+            return row_id.strip()
+    return None
+
+
+def _escape_ilike_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _service_headers(settings: Settings) -> dict[str, str]:
