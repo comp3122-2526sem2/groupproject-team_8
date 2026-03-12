@@ -23,6 +23,7 @@ type PythonWorkspaceError = Error & {
 
 const DEFAULT_MATERIAL_TIMEOUT_MS = 15000;
 const DEFAULT_CHAT_TIMEOUT_MS = 45000;
+const DEFAULT_CHAT_TOOL_CATALOG = ["grounding_context.read", "memory.search", "memory.save"];
 
 export async function listWorkspaceParticipantsViaPython(input: {
   classId: string;
@@ -188,6 +189,9 @@ export async function sendWorkspaceMessageViaPython(input: {
   message: string;
 }) {
   const timeoutMs = resolvePythonBackendChatTimeoutMs();
+  const pythonChatEngine = resolvePythonChatEngine();
+  const pythonChatToolMode = resolvePythonChatToolMode();
+  const pythonChatToolCatalog = resolvePythonChatToolCatalog();
   const payload = await postWorkspace<{
     response?: WorkspaceModelResponse;
     user_message?: WorkspaceMessageRow;
@@ -203,6 +207,13 @@ export async function sendWorkspaceMessageViaPython(input: {
     session_id: input.sessionId,
     message: input.message,
     timeout_ms: timeoutMs,
+    tool_mode: pythonChatToolMode,
+    tool_catalog: pythonChatToolCatalog,
+    orchestration_hints: {
+      phase: "phase_7_langgraph_orchestration",
+      engine: pythonChatEngine,
+      reserved_for: "langgraph_tool_calling",
+    },
   }, input.accessToken, { timeoutMs });
 
   if (!payload.response || !payload.user_message || !payload.assistant_message) {
@@ -241,6 +252,34 @@ function resolvePythonBackendChatTimeoutMs() {
     process.env.PYTHON_BACKEND_CHAT_TIMEOUT_MS ?? process.env.AI_REQUEST_TIMEOUT_MS,
     DEFAULT_CHAT_TIMEOUT_MS,
   );
+}
+
+function resolvePythonChatEngine() {
+  const value = process.env.PYTHON_BACKEND_CHAT_ENGINE?.trim().toLowerCase();
+  if (value === "langgraph_v1") {
+    return "langgraph_v1";
+  }
+  return "direct_v1";
+}
+
+function resolvePythonChatToolMode() {
+  const value = process.env.PYTHON_BACKEND_CHAT_TOOL_MODE?.trim().toLowerCase();
+  if (value === "plan" || value === "auto") {
+    return value;
+  }
+  return "off";
+}
+
+function resolvePythonChatToolCatalog() {
+  const raw = process.env.PYTHON_BACKEND_CHAT_TOOL_CATALOG;
+  if (!raw) {
+    return DEFAULT_CHAT_TOOL_CATALOG;
+  }
+  const catalog = raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return catalog.length > 0 ? catalog : DEFAULT_CHAT_TOOL_CATALOG;
 }
 
 async function postWorkspace<T>(

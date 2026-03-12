@@ -276,6 +276,19 @@ describe("generateTextWithFallback", () => {
       }),
     ).rejects.toThrow("python backend hard fail");
   });
+
+  it("throws a backend status error when python backend returns an invalid envelope body", async () => {
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
+
+    vi.spyOn(global, "fetch").mockResolvedValueOnce(makeInvalidJsonResponse(true));
+
+    await expect(
+      generateTextWithFallback({
+        system: "sys",
+        user: "user",
+      }),
+    ).rejects.toThrow("Python backend request failed with 200.");
+  });
 });
 
 describe("generateEmbeddingsWithFallback", () => {
@@ -305,6 +318,17 @@ describe("generateEmbeddingsWithFallback", () => {
 function makeJsonResponse(payload: unknown, ok = true) {
   return {
     ok,
+    status: ok ? 200 : 500,
     json: async () => payload,
+  } as Response;
+}
+
+function makeInvalidJsonResponse(ok = true) {
+  return {
+    ok,
+    status: ok ? 200 : 500,
+    json: async () => {
+      throw new Error("invalid json");
+    },
   } as Response;
 }

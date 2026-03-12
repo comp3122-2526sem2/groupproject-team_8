@@ -153,9 +153,9 @@ async function postToPythonBackend<T>(input: {
     `Python backend request (${input.path})`,
   );
 
-  const payload = (await safeJson(response)) as Envelope<T>;
-  if (!response.ok || !payload.ok || !payload.data) {
-    throw new Error(payload.error?.message ?? `Python backend request failed with ${response.status}.`);
+  const payload = (await safeJson(response)) as Envelope<T> | null;
+  if (!response.ok || !payload?.ok || !payload.data) {
+    throw new Error(payload?.error?.message ?? `Python backend request failed with ${response.status}.`);
   }
 
   return payload.data;

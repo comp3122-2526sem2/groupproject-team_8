@@ -39,6 +39,9 @@ describe("python workspace timeout handling", () => {
     delete process.env.PYTHON_BACKEND_API_KEY;
     delete process.env.PYTHON_BACKEND_MATERIAL_TIMEOUT_MS;
     delete process.env.PYTHON_BACKEND_CHAT_TIMEOUT_MS;
+    delete process.env.PYTHON_BACKEND_CHAT_ENGINE;
+    delete process.env.PYTHON_BACKEND_CHAT_TOOL_MODE;
+    delete process.env.PYTHON_BACKEND_CHAT_TOOL_CATALOG;
     delete process.env.AI_REQUEST_TIMEOUT_MS;
     vi.useFakeTimers();
   });
@@ -83,5 +86,81 @@ describe("python workspace timeout handling", () => {
     await vi.advanceTimersByTimeAsync(7000);
     const message = await timeoutMessage;
     expect(message).toContain("7000ms");
+  });
+
+  it("forwards orchestration options for workspace message sends", async () => {
+    process.env.PYTHON_BACKEND_CHAT_ENGINE = "langgraph_v1";
+    process.env.PYTHON_BACKEND_CHAT_TOOL_MODE = "plan";
+    process.env.PYTHON_BACKEND_CHAT_TOOL_CATALOG = "grounding_context.read,web.search";
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(JSON.stringify({
+        ok: true,
+        data: {
+          response: {
+            answer: "Response",
+            safety: "ok",
+            citations: [],
+          },
+          user_message: {
+            id: "msg-user",
+            session_id: body.session_id,
+            class_id: body.class_id,
+            author_user_id: body.user_id,
+            author_kind: "student",
+            content: body.message,
+            citations: [],
+            safety: null,
+            provider: null,
+            model: null,
+            prompt_tokens: null,
+            completion_tokens: null,
+            total_tokens: null,
+            latency_ms: null,
+            created_at: "2026-03-13T00:00:00.000Z",
+          },
+          assistant_message: {
+            id: "msg-assistant",
+            session_id: body.session_id,
+            class_id: body.class_id,
+            author_user_id: null,
+            author_kind: "assistant",
+            content: "Response",
+            citations: [],
+            safety: "ok",
+            provider: "openrouter",
+            model: "gpt-5-mini",
+            prompt_tokens: 1,
+            completion_tokens: 1,
+            total_tokens: 2,
+            latency_ms: 10,
+            created_at: "2026-03-13T00:00:01.000Z",
+          },
+        },
+      }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendWorkspaceMessageViaPython({
+      classId: "class-1",
+      userId: "student-1",
+      accessToken: "session-token",
+      sessionId: "session-1",
+      message: "Help me solve this derivative.",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}"));
+    expect(requestBody).toMatchObject({
+      class_id: "class-1",
+      user_id: "student-1",
+      session_id: "session-1",
+      message: "Help me solve this derivative.",
+      tool_mode: "plan",
+      tool_catalog: ["grounding_context.read", "web.search"],
+      orchestration_hints: expect.objectContaining({
+        engine: "langgraph_v1",
+      }),
+    });
   });
 });
