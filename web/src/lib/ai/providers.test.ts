@@ -316,19 +316,15 @@ describe("generateEmbeddingsWithFallback", () => {
 });
 
 function makeJsonResponse(payload: unknown, ok = true) {
-  return {
-    ok,
+  return new Response(JSON.stringify(payload), {
     status: ok ? 200 : 500,
-    json: async () => payload,
-  } as Response;
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 function makeInvalidJsonResponse(ok = true) {
-  return {
-    ok,
+  return new Response("{not-valid-json", {
     status: ok ? 200 : 500,
-    json: async () => {
-      throw new Error("invalid json");
-    },
-  } as Response;
+    headers: { "Content-Type": "application/json" },
+  });
 }

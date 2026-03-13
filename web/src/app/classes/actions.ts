@@ -66,6 +66,29 @@ function canRollbackMaterialAfterPythonDispatchFailure(error: unknown) {
   );
 }
 
+function isDeterministicPythonDispatchTransportError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const causeCode =
+    typeof (error as { cause?: { code?: unknown } }).cause?.code === "string"
+      ? (error as { cause?: { code?: string } }).cause?.code
+      : null;
+  if (
+    causeCode === "ENOTFOUND" ||
+    causeCode === "EAI_AGAIN" ||
+    causeCode === "ECONNREFUSED" ||
+    causeCode === "EHOSTUNREACH" ||
+    causeCode === "ENETUNREACH"
+  ) {
+    return true;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("invalid url") || message.includes("failed to parse url");
+}
+
 async function dispatchMaterialJobViaPythonBackend(input: {
   classId: string;
   materialId: string;
@@ -135,7 +158,7 @@ async function dispatchMaterialJobViaPythonBackend(input: {
     }
     throw createPythonMaterialDispatchError(
       error instanceof Error ? error.message : "Python backend material dispatch failed.",
-      false,
+      isDeterministicPythonDispatchTransportError(error),
     );
   } finally {
     clearTimeout(timer);

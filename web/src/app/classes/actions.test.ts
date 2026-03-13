@@ -538,6 +538,50 @@ describe("class actions", () => {
     expect(supabaseStorageMock.from).toHaveBeenCalledTimes(2);
   });
 
+  it("rolls back uploaded material when python dispatch fails with deterministic transport error", async () => {
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
+
+    const file = new File([Buffer.from("hello")], "lecture.pdf", {
+      type: "application/pdf",
+    });
+    const formData = new FormData();
+    formData.set("file", file);
+    formData.set("title", "Lecture 1");
+
+    vi.mocked(detectMaterialKind).mockReturnValue("pdf");
+    vi.mocked(sanitizeFilename).mockReturnValue("lecture.pdf");
+    const transportError = new TypeError("fetch failed") as TypeError & {
+      cause?: { code?: string };
+    };
+    transportError.cause = { code: "ENOTFOUND" };
+    vi.spyOn(global, "fetch").mockRejectedValueOnce(transportError);
+
+    supabaseFromMock.mockImplementation((table: string) => {
+      if (table === "classes") {
+        return makeBuilder({
+          data: { id: "class-1", owner_id: "u1" },
+          error: null,
+        });
+      }
+      if (table === "enrollments") {
+        return makeBuilder({ data: null, error: null });
+      }
+      if (table === "materials") {
+        return makeBuilder({ data: { id: "m1" }, error: null });
+      }
+      return makeBuilder({ data: null, error: null });
+    });
+
+    await expectRedirect(
+      () => uploadMaterial("class-1", formData),
+      `/classes/class-1?error=${encodeURIComponent("Failed to queue material processing: fetch failed")}`,
+    );
+
+    const materialsCalls = supabaseFromMock.mock.calls.filter((call) => call[0] === "materials");
+    expect(materialsCalls).toHaveLength(2);
+    expect(supabaseStorageMock.from).toHaveBeenCalledTimes(2);
+  });
+
   it("blocks class creation for student accounts", async () => {
     vi.mocked(requireVerifiedUser).mockImplementationOnce(async () => {
       redirect(
