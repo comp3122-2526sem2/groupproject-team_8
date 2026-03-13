@@ -85,11 +85,16 @@ def create_class(settings: Settings, request: ClassCreateRequest) -> ClassCreate
             },
         )
         if enrollment_response.status_code >= 400:
-            _rollback_created_class(client, settings, class_id)
             enrollment_payload = _safe_json(enrollment_response)
-            message = _extract_error_message(
+            enrollment_message = _extract_error_message(
                 enrollment_payload) or "Failed to create class enrollment."
-            raise RuntimeError(message)
+            try:
+                _rollback_created_class(client, settings, class_id)
+            except RuntimeError as rollback_error:
+                raise RuntimeError(
+                    f"{enrollment_message} Rollback failed: {rollback_error}"
+                ) from rollback_error
+            raise RuntimeError(enrollment_message)
 
         return ClassCreateResult(class_id=class_id)
 
@@ -210,12 +215,21 @@ def _rollback_created_class(client: httpx.Client, settings: Settings, class_id: 
     base_url = _supabase_base_url(settings)
     delete_url = f"{base_url}/rest/v1/classes?id=eq.{quote(class_id, safe='')}"
     try:
-        client.delete(
+        response = client.delete(
             delete_url,
             headers=_service_headers(settings),
         )
-    except Exception:
-        return
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed to rollback class creation after enrollment failure."
+        ) from exc
+
+    if response.status_code >= 400:
+        payload = _safe_json(response)
+        message = _extract_error_message(payload) or (
+            "Failed to rollback class creation after enrollment failure."
+        )
+        raise RuntimeError(message)
 
 
 def _extract_first_id(payload: Any) -> str | None:

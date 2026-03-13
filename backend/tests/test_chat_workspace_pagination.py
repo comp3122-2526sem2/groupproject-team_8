@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+import path_setup  # noqa: F401  # pyright: ignore[reportUnusedImport]
+
+import unittest
+from contextlib import nullcontext
+from unittest.mock import patch
+
+from app.chat_workspace import list_messages
+from app.schemas import ChatWorkspaceMessagesListRequest
+from tests.helpers import make_settings
+
+
+class ChatWorkspacePaginationTests(unittest.TestCase):
+    def test_list_messages_wraps_or_filter_for_before_cursor(self) -> None:
+        settings = make_settings()
+        cursor = "2026-03-10T00:00:00+00:00|msg-42"
+        request = ChatWorkspaceMessagesListRequest(
+            class_id="class-1",
+            user_id="teacher-1",
+            session_id="session-1",
+            owner_user_id="student-1",
+            before_cursor=cursor,
+            limit=20,
+        )
+
+        session_row = {
+            "id": "session-1",
+            "class_id": "class-1",
+            "owner_user_id": "student-1",
+            "title": "Session",
+            "is_pinned": False,
+            "archived_at": None,
+            "last_message_at": "2026-03-10T00:10:00+00:00",
+            "created_at": "2026-03-10T00:00:00+00:00",
+            "updated_at": "2026-03-10T00:10:00+00:00",
+        }
+
+        with (
+            patch("app.chat_workspace._client", return_value=nullcontext(object())),
+            patch("app.chat_workspace._resolve_access", return_value={"is_member": True, "is_teacher": True}),
+            patch("app.chat_workspace._resolve_owner_user_id", return_value="student-1"),
+            patch("app.chat_workspace._query_maybe_single", return_value=session_row),
+            patch("app.chat_workspace._query_list", return_value=[]) as query_list_mock,
+        ):
+            list_messages(settings, request)
+
+        params = query_list_mock.call_args.kwargs["params"]
+        self.assertEqual(
+            params["or"],
+            "(created_at.lt.2026-03-10T00:00:00+00:00,and(created_at.eq.2026-03-10T00:00:00+00:00,id.lt.msg-42))",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

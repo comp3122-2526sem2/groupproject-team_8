@@ -330,8 +330,8 @@ def list_messages(settings: Settings, request: ChatWorkspaceMessagesListRequest)
         cursor = _decode_cursor(request.before_cursor)
         if cursor:
             params["or"] = (
-                f"created_at.lt.{cursor['created_at']},"
-                f"and(created_at.eq.{cursor['created_at']},id.lt.{cursor['id']})"
+                f"(created_at.lt.{cursor['created_at']},"
+                f"and(created_at.eq.{cursor['created_at']},id.lt.{cursor['id']}))"
             )
 
         rows = _query_list(

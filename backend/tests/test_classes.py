@@ -89,6 +89,45 @@ class ClassesTests(unittest.TestCase):
         self.assertIn("select=id,join_code", lookup_url)
         self.assertIn("join_code=ilike.AB%5C%25%5C_1", lookup_url)
 
+    def test_create_class_reports_rollback_failure_when_delete_fails(self) -> None:
+        settings = make_settings()
+        request = ClassCreateRequest(
+            user_id="teacher-1",
+            title="Physics",
+            subject="Science",
+            level="College",
+            description="Mechanics",
+            join_code="JOIN42",
+        )
+
+        create_response = MagicMock(status_code=201)
+        create_response.json.return_value = [{"id": "class-1"}]
+
+        enrollment_response = MagicMock(status_code=400)
+        enrollment_response.json.return_value = {"message": "Enrollment insert failed"}
+
+        rollback_response = MagicMock(status_code=500)
+        rollback_response.json.return_value = {"message": "Delete rollback failed"}
+
+        client = MagicMock()
+        client.post.side_effect = [create_response, enrollment_response]
+        client.delete.return_value = rollback_response
+
+        client_context = MagicMock()
+        client_context.__enter__.return_value = client
+        client_context.__exit__.return_value = None
+
+        with (
+            patch("app.classes.httpx.Client", return_value=client_context),
+            patch("app.classes._load_account_type", return_value="teacher"),
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                create_class(settings, request)
+
+        self.assertIn("Enrollment insert failed", str(ctx.exception))
+        self.assertIn("Rollback failed: Delete rollback failed", str(ctx.exception))
+        self.assertEqual(client.delete.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
