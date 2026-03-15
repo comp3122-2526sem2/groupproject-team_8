@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const JOB_BATCH_SIZE = Number(process.env.MATERIAL_JOB_BATCH ?? 3);
+const JOB_BATCH_SIZE = Number(process.env.MATERIAL_WORKER_BATCH ?? 3);
 
 async function handleProcessRequest(req: Request) {
   const secret = process.env.CRON_SECRET;
