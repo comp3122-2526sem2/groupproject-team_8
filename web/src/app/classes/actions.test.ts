@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createClass, joinClass, uploadMaterial } from "@/app/classes/actions";
+import {
+  createClass,
+  joinClass,
+  uploadMaterial,
+  getMaterialSignedUrl,
+  deleteMaterial,
+} from "@/app/classes/actions";
 import { redirect } from "next/navigation";
 import { generateJoinCode } from "@/lib/join-code";
 import {
@@ -14,6 +20,12 @@ vi.mock("next/navigation", () => ({
     error.digest = `NEXT_REDIRECT;replace;${url};307;`;
     throw error;
   }),
+  revalidatePath: vi.fn(),
+}));
+
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+  revalidateTag: vi.fn(),
 }));
 
 vi.mock("@/lib/join-code", () => ({
@@ -38,6 +50,15 @@ const supabaseStorageMock = {
     upload: vi.fn().mockResolvedValue({ error: null }),
     remove: vi.fn().mockResolvedValue({ error: null }),
   })),
+};
+
+const bucketMock = {
+  upload: vi.fn().mockResolvedValue({ error: null }),
+  remove: vi.fn().mockResolvedValue({ error: null }),
+  createSignedUrl: vi.fn().mockResolvedValue({
+    data: { signedUrl: "https://test.supabase.co/storage/v1/sign/file.pdf" },
+    error: null,
+  }),
 };
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -614,5 +635,129 @@ describe("class actions", () => {
       () => joinClass(formData),
       "/teacher/dashboard?error=This%20action%20requires%20a%20student%20account.",
     );
+  });
+});
+
+describe("getMaterialSignedUrl", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(requireVerifiedUser).mockResolvedValue({
+      supabase: { from: supabaseFromMock, storage: supabaseStorageMock } as never,
+      user: { id: "user-1" } as never,
+      accessToken: "tok",
+    } as never);
+    supabaseStorageMock.from.mockReturnValue(bucketMock);
+  });
+
+  it("returns error when teacher access is denied", async () => {
+    supabaseFromMock.mockReturnValueOnce(
+      makeBuilder({ data: null, error: { message: "Access denied" } })
+    );
+    const result = await getMaterialSignedUrl("class-1", "mat-1");
+    expect(result.ok).toBe(false);
+  });
+
+  it("returns error when material not found", async () => {
+    // First call: requireTeacherAccess (classes lookup) → success
+    supabaseFromMock.mockReturnValueOnce(
+      makeBuilder({ data: { id: "class-1", owner_id: "user-1" }, error: null })
+    );
+    // Second call: materials lookup → not found
+    supabaseFromMock.mockReturnValueOnce(
+      makeBuilder({ data: null, error: { message: "Row not found" } })
+    );
+    const result = await getMaterialSignedUrl("class-1", "mat-1");
+    expect(result.ok).toBe(false);
+    expect(result).toMatchObject({ error: "Material not found." });
+  });
+
+  it("returns error when createSignedUrl fails", async () => {
+    supabaseFromMock
+      .mockReturnValueOnce(makeBuilder({ data: { id: "class-1", owner_id: "user-1" }, error: null }))
+      .mockReturnValueOnce(makeBuilder({ data: { id: "mat-1", storage_path: "classes/c1/m1/file.pdf" }, error: null }));
+    bucketMock.createSignedUrl.mockResolvedValueOnce({ data: null, error: { message: "storage error" } });
+    const result = await getMaterialSignedUrl("class-1", "mat-1");
+    expect(result.ok).toBe(false);
+    expect(result).toMatchObject({ error: "storage error" });
+  });
+
+  it("returns signed URL on success", async () => {
+    supabaseFromMock
+      .mockReturnValueOnce(makeBuilder({ data: { id: "class-1", owner_id: "user-1" }, error: null }))
+      .mockReturnValueOnce(makeBuilder({ data: { id: "mat-1", storage_path: "classes/c1/m1/file.pdf" }, error: null }));
+    const result = await getMaterialSignedUrl("class-1", "mat-1");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.url).toContain("https://");
+  });
+});
+
+describe("deleteMaterial", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(requireVerifiedUser).mockResolvedValue({
+      supabase: { from: supabaseFromMock, storage: supabaseStorageMock } as never,
+      user: { id: "user-1" } as never,
+      accessToken: "tok",
+    } as never);
+    supabaseStorageMock.from.mockReturnValue(bucketMock);
+    bucketMock.remove.mockResolvedValue({ error: null });
+  });
+
+  it("returns error when teacher access is denied", async () => {
+    supabaseFromMock.mockReturnValueOnce(
+      makeBuilder({ data: null, error: { message: "Access denied" } })
+    );
+    const result = await deleteMaterial("class-1", "mat-1");
+    expect(result.ok).toBe(false);
+  });
+
+  it("returns error when material not found", async () => {
+    supabaseFromMock
+      .mockReturnValueOnce(makeBuilder({ data: { id: "class-1", owner_id: "user-1" }, error: null }))
+      .mockReturnValueOnce(makeBuilder({ data: null, error: { message: "Not found" } }));
+    const result = await deleteMaterial("class-1", "mat-1");
+    expect(result.ok).toBe(false);
+    expect(result).toMatchObject({ error: "Material not found." });
+  });
+
+  it("returns error when material status is 'processing'", async () => {
+    supabaseFromMock
+      .mockReturnValueOnce(makeBuilder({ data: { id: "class-1", owner_id: "user-1" }, error: null }))
+      .mockReturnValueOnce(makeBuilder({ data: { id: "mat-1", storage_path: "classes/c1/m1/file.pdf", status: "processing" }, error: null }));
+    const result = await deleteMaterial("class-1", "mat-1");
+    expect(result.ok).toBe(false);
+    expect(result).toMatchObject({ error: "Cannot delete a material while it is processing." });
+  });
+
+  it("returns error when storage delete fails", async () => {
+    supabaseFromMock
+      .mockReturnValueOnce(makeBuilder({ data: { id: "class-1", owner_id: "user-1" }, error: null }))
+      .mockReturnValueOnce(makeBuilder({ data: { id: "mat-1", storage_path: "classes/c1/m1/file.pdf", status: "ready" }, error: null }));
+    bucketMock.remove.mockResolvedValueOnce({ error: { message: "storage error" } });
+    const result = await deleteMaterial("class-1", "mat-1");
+    expect(result.ok).toBe(false);
+    expect(result).toMatchObject({ error: "storage error" });
+  });
+
+  it("deletes storage and DB row on success, returns ok:true", async () => {
+    const deleteBuilder = makeBuilder({ error: null });
+    supabaseFromMock
+      .mockReturnValueOnce(makeBuilder({ data: { id: "class-1", owner_id: "user-1" }, error: null }))
+      .mockReturnValueOnce(makeBuilder({ data: { id: "mat-1", storage_path: "classes/c1/m1/file.pdf", status: "ready" }, error: null }))
+      .mockReturnValueOnce(deleteBuilder);
+    const result = await deleteMaterial("class-1", "mat-1");
+    expect(result.ok).toBe(true);
+    expect(bucketMock.remove).toHaveBeenCalledWith(["classes/c1/m1/file.pdf"]);
+    expect(deleteBuilder.delete).toHaveBeenCalled();
+  });
+
+  it("returns error when DB delete fails", async () => {
+    supabaseFromMock
+      .mockReturnValueOnce(makeBuilder({ data: { id: "class-1", owner_id: "user-1" }, error: null }))
+      .mockReturnValueOnce(makeBuilder({ data: { id: "mat-1", storage_path: "classes/c1/m1/file.pdf", status: "ready" }, error: null }))
+      .mockReturnValueOnce(makeBuilder({ error: { message: "db error" } }));
+    const result = await deleteMaterial("class-1", "mat-1");
+    expect(result.ok).toBe(false);
+    expect(result).toMatchObject({ error: "db error" });
   });
 });
