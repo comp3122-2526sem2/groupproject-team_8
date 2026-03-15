@@ -58,3 +58,6 @@ supabase/.temp/
 
 # Cursor
 .cursor/
+
+# Git worktrees
+.worktrees/
