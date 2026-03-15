@@ -154,7 +154,7 @@ async def _resolve_actor_user_id(
         )
 
     try:
-        async with httpx.AsyncClient(timeout=USER_TOKEN_VERIFY_TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(timeout=USER_TOKEN_VERIFY_TIMEOUT_SECONDS, trust_env=False) as client:
             response = await client.get(
                 f"{supabase_url.rstrip('/')}/auth/v1/user",
                 headers={
