@@ -3,6 +3,7 @@ from __future__ import annotations
 import path_setup  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
 import unittest
+from typing import Any
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -77,6 +78,59 @@ class MainTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["error"]["code"], "user_id_mismatch")
+
+
+class EnvelopeGuardTests(unittest.TestCase):
+    def _client_with_boom(self, exc: Exception) -> TestClient:
+        """Return a TestClient where run_in_threadpool raises `exc`."""
+        settings = make_settings()
+        client = TestClient(app, raise_server_exceptions=False)
+
+        def boom(*_args, **_kwargs):
+            raise exc
+
+        for p in [
+            patch("app.main.get_settings", return_value=settings),
+            patch("app.main.run_in_threadpool", side_effect=boom),
+            patch("app.main._resolve_actor_user_id", return_value=("u1", None)),
+        ]:
+            p.start()
+            self.addCleanup(p.stop)
+        return client
+
+    def _post_generate(self, client: TestClient) -> Any:
+        return client.post(
+            "/v1/chat/generate",
+            headers={"x-api-key": "test-key", "authorization": "Bearer u1-jwt"},
+            json={
+                "user_id": "u1",
+                "class_id": "c1",
+                "class_title": "Test Class",
+                "user_message": "hello",
+                "blueprint_context": "test context",
+                "material_context": "test material",
+            },
+        )
+
+    def test_value_error_returns_envelope(self) -> None:
+        client = self._client_with_boom(ValueError("boom"))
+        response = self._post_generate(client)
+        self.assertEqual(response.status_code, 500)
+        body = response.json()
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["error"]["code"], "internal_error")
+        self.assertEqual(body["error"]["message"], "An unexpected error occurred.")
+        self.assertIn("request_id", body["meta"])
+
+    def test_key_error_returns_envelope(self) -> None:
+        client = self._client_with_boom(KeyError("missing"))
+        response = self._post_generate(client)
+        self.assertEqual(response.status_code, 500)
+        body = response.json()
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["error"]["code"], "internal_error")
+        self.assertEqual(body["error"]["message"], "An unexpected error occurred.")
+        self.assertIn("request_id", body["meta"])
 
 
 if __name__ == "__main__":

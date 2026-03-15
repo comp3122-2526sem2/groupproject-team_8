@@ -63,6 +63,19 @@ async def request_context_middleware(request: Request, call_next):
     return response
 
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    return JSONResponse(
+        status_code=500,
+        content=ApiEnvelope(
+            ok=False,
+            error=ApiError(message="An unexpected error occurred.", code="internal_error"),
+            meta={"request_id": request_id},
+        ).model_dump(),
+    )
+
+
 def _error_response(request: Request, *, status_code: int, message: str, code: str) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
