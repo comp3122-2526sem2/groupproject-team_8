@@ -14,7 +14,7 @@ from tests.helpers import make_settings
 class ChatWorkspacePaginationTests(unittest.TestCase):
     def test_list_messages_wraps_or_filter_for_before_cursor(self) -> None:
         settings = make_settings()
-        cursor = "2026-03-10T00:00:00+00:00|msg-42"
+        cursor = "2026-03-10T00:00:00+00:00|550e8400-e29b-41d4-a716-446655440000"
         request = ChatWorkspaceMessagesListRequest(
             class_id="class-1",
             user_id="teacher-1",
@@ -48,7 +48,7 @@ class ChatWorkspacePaginationTests(unittest.TestCase):
         params = query_list_mock.call_args.kwargs["params"]
         self.assertEqual(
             params["or"],
-            "(created_at.lt.2026-03-10T00:00:00+00:00,and(created_at.eq.2026-03-10T00:00:00+00:00,id.lt.msg-42))",
+            "(created_at.lt.2026-03-10T00:00:00+00:00,and(created_at.eq.2026-03-10T00:00:00+00:00,id.lt.550e8400-e29b-41d4-a716-446655440000))",
         )
 
 

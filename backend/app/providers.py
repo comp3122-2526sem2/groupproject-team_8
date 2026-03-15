@@ -382,7 +382,7 @@ def _post_json(
 ) -> dict[str, Any]:
     timeout_seconds = timeout_ms / 1000
     try:
-        with httpx.Client(timeout=timeout_seconds) as client:
+        with httpx.Client(timeout=timeout_seconds, trust_env=False) as client:
             response = client.post(url, json=payload, headers=headers)
     except httpx.TimeoutException as error:
         raise RuntimeError(

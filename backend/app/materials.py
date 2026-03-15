@@ -25,7 +25,7 @@ def dispatch_material_job(settings: Settings, request: MaterialDispatchRequest) 
     }
     timeout_seconds = max(5, settings.ai_request_timeout_ms / 1000)
 
-    with httpx.Client(timeout=timeout_seconds) as client:
+    with httpx.Client(timeout=timeout_seconds, trust_env=False) as client:
         enqueue_url = f"{settings.supabase_url.rstrip('/')}/rest/v1/rpc/enqueue_material_job"
         enqueue_response = client.post(
             enqueue_url,
@@ -54,7 +54,7 @@ def dispatch_material_job(settings: Settings, request: MaterialDispatchRequest) 
 
 
 def process_material_jobs(settings: Settings, request: MaterialProcessRequest) -> MaterialProcessResult:
-    with httpx.Client(timeout=max(5, settings.ai_request_timeout_ms / 1000)) as client:
+    with httpx.Client(timeout=max(5, settings.ai_request_timeout_ms / 1000), trust_env=False) as client:
         payload = trigger_material_worker(
             settings, request.batch_size, client=client)
 

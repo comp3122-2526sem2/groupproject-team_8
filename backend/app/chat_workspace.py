@@ -1525,7 +1525,7 @@ def _require_supabase_credentials(settings: Settings) -> None:
 
 
 def _client(settings: Settings) -> httpx.Client:
-    return httpx.Client(timeout=max(5, settings.ai_request_timeout_ms / 1000))
+    return httpx.Client(timeout=max(5, settings.ai_request_timeout_ms / 1000), trust_env=False)
 
 
 def _rest_url(settings: Settings, table: str) -> str:

@@ -29,7 +29,7 @@ def create_class(settings: Settings, request: ClassCreateRequest) -> ClassCreate
     _require_supabase_credentials(settings)
     timeout_seconds = max(5, settings.ai_request_timeout_ms / 1000)
     base_url = _supabase_base_url(settings)
-    with httpx.Client(timeout=timeout_seconds) as client:
+    with httpx.Client(timeout=timeout_seconds, trust_env=False) as client:
         account_type = _load_account_type(client, settings, request.user_id)
         if account_type != "teacher":
             raise ClassDomainError(
@@ -103,7 +103,7 @@ def join_class(settings: Settings, request: ClassJoinRequest) -> ClassJoinResult
     _require_supabase_credentials(settings)
     timeout_seconds = max(5, settings.ai_request_timeout_ms / 1000)
     base_url = _supabase_base_url(settings)
-    with httpx.Client(timeout=timeout_seconds) as client:
+    with httpx.Client(timeout=timeout_seconds, trust_env=False) as client:
         account_type = _load_account_type(client, settings, request.user_id)
         if account_type != "student":
             raise ClassDomainError(
