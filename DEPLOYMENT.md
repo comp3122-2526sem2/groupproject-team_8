@@ -73,7 +73,6 @@ Also set required AI and worker tuning secrets on Supabase (same values used by 
 - `AI_PROVIDER_DEFAULT`
 - `AI_REQUEST_TIMEOUT_MS` (recommended: `30000`)
 - `AI_EMBEDDING_TIMEOUT_MS` (recommended: `30000`)
-- `BLUEPRINT_TOTAL_TIMEOUT_MS` (recommended: `120000`)
 - `OPENROUTER_API_KEY`, `OPENROUTER_EMBEDDING_MODEL` (and optional metadata envs)
 - `OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL` (if used)
 - `GEMINI_API_KEY`, `GEMINI_EMBEDDING_MODEL` (if used)
@@ -143,6 +142,11 @@ Legacy fallback names (optional):
 - `OPENROUTER_APP_NAME`
 - `OPENROUTER_BASE_URL` (optional; defaults to OpenRouter API)
 
+### Optional alternative AI providers
+
+- `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_EMBEDDING_MODEL`
+- `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_EMBEDDING_MODEL`
+
 ### Required Python backend integration
 
 - `PYTHON_BACKEND_CHAT_ENGINE=direct_v1` (`direct_v1` or `langgraph_v1` for Python chat orchestration)
@@ -160,10 +164,7 @@ Legacy fallback names (optional):
 
 Ensure preview deployments point to a preview/staging Python backend URL instead of production.
 
-When `PYTHON_BACKEND_CHAT_ENGINE=langgraph_v1`:
-- backend dependencies must include `langchain`, `langgraph`, and `langchain-openai`
-- OpenRouter/OpenAI compatible model settings must be configured for Python backend
-- if LangChain/LangGraph runtime is unavailable, chat falls back to `direct_v1` unless strict mode is enabled
+The Python backend ships with LangGraph as a production dependency. When `PYTHON_BACKEND_CHAT_ENGINE=langgraph_v1`, the full LangChain/LangGraph agent flow is active. When set to `direct_v1`, a lightweight single-pass chat path is used instead.
 
 ## 10. Configure Supabase Auth redirect URLs
 
