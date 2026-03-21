@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { requireVerifiedUser } from "@/lib/auth/session";
 import { startServerTimer } from "@/lib/perf";
+import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
 
 type AssignmentWithMeta = {
@@ -79,22 +80,23 @@ function MetricCard({
   label: string;
   variant?: "accent" | "default";
 }) {
-  const isAccent = variant === "accent";
+  const accent = variant === "accent";
   return (
-    <Card
-      className={`rounded-2xl p-4 ${isAccent ? "bg-accent-soft" : "bg-surface-muted"}`}
-    >
+    <Card className={cn("rounded-2xl p-4", accent ? "bg-accent-soft" : "bg-surface-muted")}>
       <div className="flex items-center gap-2">
         <div
-          className={`flex h-8 w-8 items-center justify-center rounded-lg ${isAccent ? "bg-accent-soft text-accent" : "bg-surface-muted text-ui-muted"}`}
+          className={cn(
+            "flex h-8 w-8 items-center justify-center rounded-lg",
+            accent ? "bg-white/50 text-accent" : "bg-background text-ui-muted",
+          )}
         >
           <Icon className="h-4 w-4" />
         </div>
-        <span className={`text-2xl font-bold ${isAccent ? "text-accent" : "text-ui-primary"}`}>
+        <span className={cn("text-2xl font-bold", accent ? "text-accent" : "text-ui-primary")}>
           {count}
         </span>
       </div>
-      <p className={`mt-2 text-sm font-medium ${isAccent ? "text-accent" : "text-ui-muted"}`}>
+      <p className={cn("mt-2 text-sm font-medium", accent ? "text-accent" : "text-ui-muted")}>
         {label}
       </p>
     </Card>
