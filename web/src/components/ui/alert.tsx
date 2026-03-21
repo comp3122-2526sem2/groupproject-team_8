@@ -6,9 +6,9 @@ const alertVariants = cva("relative w-full rounded-xl border px-4 py-3 text-sm",
   variants: {
     variant: {
       default: "border-default bg-white text-ui-primary",
-      warning: "border-amber-200 bg-amber-50 text-amber-800",
+      warning: "status-warning",
       success: "border-emerald-200 bg-emerald-50 text-emerald-700",
-      error: "border-rose-200 bg-rose-50 text-rose-700",
+      error: "status-error",
       accent: "border-accent bg-accent-soft text-accent",
     },
   },

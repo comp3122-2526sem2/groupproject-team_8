@@ -54,6 +54,33 @@ const ROLE_CARDS = [
   },
 ];
 
+const FEATURE_ITEMS = [
+  {
+    key: "chat",
+    icon: AppIcons.chat,
+    label: "AI Chat",
+    detail: "Context-aware conversations grounded in your class materials.",
+  },
+  {
+    key: "blueprint",
+    icon: AppIcons.classes,
+    label: "Blueprint Studio",
+    detail: "Edit the AI-generated curriculum structure before publishing.",
+  },
+  {
+    key: "quiz",
+    icon: AppIcons.quiz,
+    label: "Quizzes",
+    detail: "Auto-generated assessments aligned to your learning objectives.",
+  },
+  {
+    key: "flashcards",
+    icon: AppIcons.flashcards,
+    label: "Flashcards",
+    detail: "Spaced-repetition sessions drawn from the published blueprint.",
+  },
+];
+
 export default function HeroContent({
   primaryHref,
   primaryLabel,
@@ -148,6 +175,37 @@ export default function HeroContent({
             </Card>
           </motion.div>
         ))}
+      </motion.div>
+
+      {/* Zone D — Feature grid */}
+      <motion.div
+        variants={STAGGER_CONTAINER}
+        initial="initial"
+        animate="enter"
+        transition={{ delayChildren: 0.66, staggerChildren: 0.07 }}
+        className="border-t border-default pt-8"
+      >
+        <motion.p
+          variants={STAGGER_ITEM}
+          className="mb-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-ui-subtle"
+        >
+          Platform features
+        </motion.p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {FEATURE_ITEMS.map(({ key, icon: Icon, label, detail }) => (
+            <motion.div
+              key={key}
+              variants={STAGGER_ITEM}
+              className="group rounded-2xl border border-default bg-[var(--surface-card,white)] p-4 transition-colors duration-200 hover:border-accent hover:bg-accent-soft"
+            >
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-ui-muted transition-colors duration-200 group-hover:bg-white/70 group-hover:text-accent">
+                <Icon className="h-4 w-4" />
+              </div>
+              <p className="mt-3 text-xs font-semibold text-ui-primary">{label}</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-ui-muted">{detail}</p>
+            </motion.div>
+          ))}
+        </div>
       </motion.div>
     </div>
   );

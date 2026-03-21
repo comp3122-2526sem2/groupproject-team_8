@@ -10,7 +10,7 @@ const buttonVariants = cva(
       variant: {
         default:
           "border border-accent bg-accent px-4 py-2 text-ui-primary hover:bg-accent-strong",
-        destructive: "border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100",
+        destructive: "border-[rgba(244,63,94,0.34)] bg-[rgba(244,63,94,0.11)] text-[var(--status-error-fg)] hover:bg-[rgba(244,63,94,0.18)]",
         outline:
           "border border-default bg-white text-ui-muted hover:border-accent hover:bg-accent-soft hover:text-accent",
         secondary:

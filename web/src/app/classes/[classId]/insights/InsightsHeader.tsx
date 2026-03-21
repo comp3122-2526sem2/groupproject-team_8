@@ -43,9 +43,9 @@ export default function InsightsHeader({ classId, generatedAt }: InsightsHeaderP
     <div className="mb-8">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-ui-muted">Teacher Studio</p>
-          <h1 className="text-3xl font-semibold">Class Intelligence</h1>
-          <p className="mt-1 text-sm text-ui-muted">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">Teacher Studio</p>
+          <h1 className="editorial-title mt-2 text-4xl text-ui-primary">Class Intelligence</h1>
+          <p className="mt-1.5 text-sm text-ui-muted">
             Last updated {timeAgo(generatedAt)}
           </p>
         </div>

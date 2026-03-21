@@ -62,7 +62,7 @@ export default function DiagramCanvas({ spec }: DiagramCanvasProps) {
     <div className="space-y-2">
       <p className="text-sm font-semibold text-ui-primary">{spec.title}</p>
       {error ? (
-        <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">{error}</p>
+        <p className="rounded-xl border border-[rgba(244,63,94,0.3)] bg-[rgba(244,63,94,0.08)] px-3 py-2 text-xs text-[var(--status-error-fg)]">{error}</p>
       ) : isRendering ? (
         <div className="min-h-24 animate-pulse rounded-xl border border-default bg-[var(--surface-muted)]" />
       ) : (

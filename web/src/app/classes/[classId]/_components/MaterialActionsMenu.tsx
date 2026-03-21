@@ -122,7 +122,7 @@ export function MaterialActionsMenu({ classId, material }: MaterialActionsMenuPr
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={() => { clearError(); setDeleteOpen(true); }}
-            className="text-rose-600 focus:text-rose-600"
+            className="text-[var(--status-error-fg,#9f1239)] focus:text-[var(--status-error-fg,#9f1239)]"
           >
             <AppIcons.trash className="mr-2 h-4 w-4" />
             Delete
@@ -163,7 +163,7 @@ export function MaterialActionsMenu({ classId, material }: MaterialActionsMenuPr
             </DialogDescription>
           </DialogHeader>
           {error && (
-            <p className="text-sm text-rose-600">{error}</p>
+            <p className="text-sm text-[var(--status-error-fg,#9f1239)]">{error}</p>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={isPending}>

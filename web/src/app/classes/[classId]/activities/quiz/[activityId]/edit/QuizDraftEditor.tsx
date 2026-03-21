@@ -226,7 +226,7 @@ export default function QuizDraftEditor({
                               })
                             }
                             disabled={isPublished}
-                            className="flex h-10 w-full min-w-0 rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                            className="flex h-10 w-full min-w-0 rounded-xl border border-default bg-[var(--surface-card,white)] px-3 py-2 text-sm text-ui-primary shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <option value="">Select a correct answer</option>
                             {question.choices.map((choice, choiceIndex) => (

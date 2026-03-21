@@ -330,7 +330,7 @@ export default function Sidebar({ accountType, userEmail, userDisplayName, class
             aria-label={isCompact ? "Sign out" : undefined}
             variant="ghost"
             className={cn(
-              "text-sm font-medium text-ui-muted hover:bg-rose-50 hover:text-rose-700",
+              "text-sm font-medium text-ui-muted hover:bg-[rgba(244,63,94,0.08)] hover:text-[var(--status-error-fg,#9f1239)]",
               isCompact ? "h-10 w-10 rounded-xl px-0" : "justify-start gap-2 rounded-lg px-3 py-2",
             )}
           >

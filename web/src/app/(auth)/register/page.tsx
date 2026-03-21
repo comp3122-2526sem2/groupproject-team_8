@@ -41,7 +41,7 @@ export default async function RegisterPage({
         <div className="space-y-2">
           <span className="text-sm font-medium text-ui-muted">Account type</span>
           <div className="grid grid-cols-2 gap-2">
-            <label className="ui-motion-color flex cursor-pointer items-center gap-2 rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-subtle hover:border-accent">
+            <label className="ui-motion-color flex cursor-pointer items-center gap-2 rounded-xl border border-default bg-[var(--surface-card,white)] px-3 py-2 text-sm text-ui-subtle hover:border-accent">
               <input
                 type="radio"
                 name="account_type"
@@ -51,7 +51,7 @@ export default async function RegisterPage({
               />
               Teacher
             </label>
-            <label className="ui-motion-color flex cursor-pointer items-center gap-2 rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-subtle hover:border-accent">
+            <label className="ui-motion-color flex cursor-pointer items-center gap-2 rounded-xl border border-default bg-[var(--surface-card,white)] px-3 py-2 text-sm text-ui-subtle hover:border-accent">
               <input
                 type="radio"
                 name="account_type"

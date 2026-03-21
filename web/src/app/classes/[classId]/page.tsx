@@ -9,14 +9,17 @@ import { MaterialActionsMenu } from "@/app/classes/[classId]/_components/Materia
 import TeacherChatMonitorPanel from "@/app/classes/[classId]/chat/TeacherChatMonitorPanel";
 import TransientFeedbackAlert from "@/components/ui/transient-feedback-alert";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { AppIcons } from "@/components/icons";
 import { startServerTimer } from "@/lib/perf";
 import { requireVerifiedUser } from "@/lib/auth/session";
+import { cn } from "@/lib/utils";
 
 type SearchParams = {
   error?: string;
   uploaded?: string;
   view?: string;
-  as?: string; // Add support for 'as=student' preview mode
+  as?: string;
 };
 
 type ActivityAssignmentSummary = {
@@ -28,24 +31,71 @@ type ActivityAssignmentSummary = {
 };
 
 function formatDueDate(value: string | null) {
-  if (!value) {
-    return "No due date";
-  }
+  if (!value) return "No due date";
   return `Due ${new Date(value).toLocaleString()}`;
 }
 
 function formatAssignmentStatus(value: string | null | undefined) {
   const status = value ?? "assigned";
-  if (status === "in_progress") {
-    return "In progress";
-  }
-  if (status === "submitted") {
-    return "Submitted";
-  }
-  if (status === "reviewed") {
-    return "Reviewed";
-  }
+  if (status === "in_progress") return "In progress";
+  if (status === "submitted") return "Submitted";
+  if (status === "reviewed") return "Reviewed";
   return "Assigned";
+}
+
+function ActivityTypePill({ type }: { type: "chat" | "quiz" | "flashcards" }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        type === "chat" && "pill-chat",
+        type === "quiz" && "pill-quiz",
+        type === "flashcards" && "pill-flashcards",
+      )}
+    >
+      {type}
+    </span>
+  );
+}
+
+function AssignmentRow({
+  assignment,
+  reviewHref,
+  openHref,
+  isTeacher,
+}: {
+  assignment: ActivityAssignmentSummary;
+  reviewHref?: string;
+  openHref?: string;
+  isTeacher: boolean;
+}) {
+  const href = isTeacher ? reviewHref! : openHref!;
+  const actionLabel = isTeacher ? "Review" : "Open";
+
+  return (
+    <Link
+      href={href}
+      className="ui-motion-lift group flex items-center justify-between gap-3 rounded-2xl border border-default bg-[var(--surface-card,white)] px-4 py-3 hover:-translate-y-0.5 hover:border-accent hover:shadow-md"
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        <ActivityTypePill type={assignment.activityType} />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-ui-primary group-hover:text-accent transition-colors duration-200">
+            {assignment.title}
+          </p>
+          <p className="text-xs text-ui-muted">
+            {formatDueDate(assignment.dueAt)}
+            {!isTeacher && assignment.status
+              ? ` · ${formatAssignmentStatus(assignment.status)}`
+              : null}
+          </p>
+        </div>
+      </div>
+      <span className="shrink-0 text-xs font-semibold text-accent transition-colors duration-200 group-hover:text-accent-strong">
+        {actionLabel} →
+      </span>
+    </Link>
+  );
 }
 
 export default async function ClassOverviewPage({
@@ -83,10 +133,7 @@ export default async function ClassOverviewPage({
   const isActualTeacher =
     classRow.owner_id === user.id || enrollment?.role === "teacher" || enrollment?.role === "ta";
 
-  // If a teacher wants to preview the student view, they can pass ?as=student
   const isStudentPreview = isActualTeacher && resolvedSearchParams?.as === "student";
-  
-  // For rendering purposes, a teacher in student preview mode is treated as a student
   const isTeacher = isActualTeacher && !isStudentPreview;
 
   const [publishedBlueprintResult, materialsResult] = await Promise.all([
@@ -109,7 +156,7 @@ export default async function ClassOverviewPage({
   const publishedBlueprint = publishedBlueprintResult.data;
   const materials = materialsResult.data;
   const processingMaterialCount =
-    materials?.filter((material) => material.status === "processing").length ?? 0;
+    materials?.filter((m) => m.status === "processing").length ?? 0;
 
   let teacherChatAssignments: ActivityAssignmentSummary[] = [];
   let teacherQuizAssignments: ActivityAssignmentSummary[] = [];
@@ -126,7 +173,7 @@ export default async function ClassOverviewPage({
       .order("created_at", { ascending: false })
       .limit(20);
 
-    const activityIds = (assignments ?? []).map((assignment) => assignment.activity_id);
+    const activityIds = (assignments ?? []).map((a) => a.activity_id);
     const { data: activities } =
       activityIds.length > 0
         ? await supabase
@@ -136,7 +183,7 @@ export default async function ClassOverviewPage({
             .eq("class_id", classId)
         : { data: null };
 
-    const activityById = new Map((activities ?? []).map((activity) => [activity.id, activity]));
+    const activityById = new Map((activities ?? []).map((a) => [a.id, a]));
 
     const mappedAssignments = (assignments ?? [])
       .map((assignment) => {
@@ -154,38 +201,28 @@ export default async function ClassOverviewPage({
           activityType: activity.type,
         } satisfies ActivityAssignmentSummary;
       })
-      .filter((value): value is ActivityAssignmentSummary => value !== null);
+      .filter((v): v is ActivityAssignmentSummary => v !== null);
 
-    teacherChatAssignments = mappedAssignments.filter(
-      (assignment) => assignment.activityType === "chat"
-    );
-    teacherQuizAssignments = mappedAssignments.filter(
-      (assignment) => assignment.activityType === "quiz"
-    );
-    teacherFlashcardsAssignments = mappedAssignments.filter(
-      (assignment) => assignment.activityType === "flashcards"
-    );
+    teacherChatAssignments = mappedAssignments.filter((a) => a.activityType === "chat");
+    teacherQuizAssignments = mappedAssignments.filter((a) => a.activityType === "quiz");
+    teacherFlashcardsAssignments = mappedAssignments.filter((a) => a.activityType === "flashcards");
   } else {
-    // If it's a teacher previewing as a student, we fake an empty assignment list or load class assignments.
-    // For simplicity, we can load up to 20 recently assigned items across the class.
     let recipientsData: Array<{ assignment_id: string; status: string; assigned_at: string }> = [];
-    
+
     if (isStudentPreview) {
-      // Teacher previewing: Just fetch the assignments from the class directly to show what's ongoing.
       const { data: recentAssignments } = await supabase
         .from("assignments")
         .select("id,created_at")
         .eq("class_id", classId)
         .order("created_at", { ascending: false })
         .limit(20);
-        
-      recipientsData = (recentAssignments ?? []).map(a => ({
+
+      recipientsData = (recentAssignments ?? []).map((a) => ({
         assignment_id: a.id,
         status: "assigned",
-        assigned_at: a.created_at
+        assigned_at: a.created_at,
       }));
     } else {
-      // Real student
       const { data: recipients } = await supabase
         .from("assignment_recipients")
         .select("assignment_id,status,assigned_at")
@@ -195,7 +232,7 @@ export default async function ClassOverviewPage({
       recipientsData = recipients ?? [];
     }
 
-    const assignmentIds = recipientsData.map((recipient) => recipient.assignment_id);
+    const assignmentIds = recipientsData.map((r) => r.assignment_id);
     const { data: assignments } =
       assignmentIds.length > 0
         ? await supabase
@@ -205,7 +242,7 @@ export default async function ClassOverviewPage({
             .eq("class_id", classId)
         : { data: null };
 
-    const activityIds = (assignments ?? []).map((assignment) => assignment.activity_id);
+    const activityIds = (assignments ?? []).map((a) => a.activity_id);
     const { data: activities } =
       activityIds.length > 0
         ? await supabase
@@ -215,10 +252,8 @@ export default async function ClassOverviewPage({
             .eq("class_id", classId)
         : { data: null };
 
-    const assignmentById = new Map(
-      (assignments ?? []).map((assignment) => [assignment.id, assignment])
-    );
-    const activityById = new Map((activities ?? []).map((activity) => [activity.id, activity]));
+    const assignmentById = new Map((assignments ?? []).map((a) => [a.id, a]));
+    const activityById = new Map((activities ?? []).map((a) => [a.id, a]));
     const { data: submissions } =
       assignmentIds.length > 0 && !isStudentPreview
         ? await supabase
@@ -229,69 +264,60 @@ export default async function ClassOverviewPage({
         : { data: [] };
 
     const submissionCountByAssignmentId = new Map<string, number>();
-    (submissions ?? []).forEach((submission) => {
+    (submissions ?? []).forEach((s) => {
       submissionCountByAssignmentId.set(
-        submission.assignment_id,
-        (submissionCountByAssignmentId.get(submission.assignment_id) ?? 0) + 1
+        s.assignment_id,
+        (submissionCountByAssignmentId.get(s.assignment_id) ?? 0) + 1,
       );
     });
 
-    const mappedStudentAssignments: Array<ActivityAssignmentSummary | null> = (
-      recipientsData
-    ).map((recipient) => {
-      const assignment = assignmentById.get(recipient.assignment_id);
-      if (!assignment) {
-        return null;
-      }
-      const activity = activityById.get(assignment.activity_id);
-      if (
-        !activity ||
-        (activity.type !== "chat" && activity.type !== "quiz" && activity.type !== "flashcards")
-      ) {
-        return null;
-      }
+    const mappedStudentAssignments = recipientsData
+      .map((recipient) => {
+        const assignment = assignmentById.get(recipient.assignment_id);
+        if (!assignment) return null;
+        const activity = activityById.get(assignment.activity_id);
+        if (
+          !activity ||
+          (activity.type !== "chat" && activity.type !== "quiz" && activity.type !== "flashcards")
+        ) {
+          return null;
+        }
 
-      const submissionCount = submissionCountByAssignmentId.get(assignment.id) ?? 0;
-      const activityConfig =
-        activity.config && typeof activity.config === "object"
-          ? (activity.config as Record<string, unknown>)
-          : {};
-      const attemptLimit =
-        typeof activityConfig.attemptLimit === "number" ? activityConfig.attemptLimit : 2;
+        const submissionCount = submissionCountByAssignmentId.get(assignment.id) ?? 0;
+        const activityConfig =
+          activity.config && typeof activity.config === "object"
+            ? (activity.config as Record<string, unknown>)
+            : {};
+        const attemptLimit =
+          typeof activityConfig.attemptLimit === "number" ? activityConfig.attemptLimit : 2;
 
-      const status =
-        recipient.status === "reviewed"
-          ? "reviewed"
-          : activity.type === "chat"
-            ? submissionCount > 0
-              ? "submitted"
-              : recipient.status
-            : submissionCount === 0
-              ? recipient.status
-              : submissionCount >= attemptLimit
+        const status =
+          recipient.status === "reviewed"
+            ? "reviewed"
+            : activity.type === "chat"
+              ? submissionCount > 0
                 ? "submitted"
-                : "in_progress";
+                : recipient.status
+              : submissionCount === 0
+                ? recipient.status
+                : submissionCount >= attemptLimit
+                  ? "submitted"
+                  : "in_progress";
 
-      return {
-        assignmentId: assignment.id,
-        title: activity.title,
-        dueAt: assignment.due_at,
-        activityType: activity.type,
-        status,
-      };
-    });
+        return {
+          assignmentId: assignment.id,
+          title: activity.title,
+          dueAt: assignment.due_at,
+          activityType: activity.type,
+          status,
+        } satisfies ActivityAssignmentSummary;
+      })
+      .filter((v): v is ActivityAssignmentSummary => v !== null);
 
-    const filteredAssignments = mappedStudentAssignments.filter(
-      (value): value is ActivityAssignmentSummary => value !== null
-    );
-    studentChatAssignments = filteredAssignments.filter(
-      (assignment) => assignment.activityType === "chat"
-    );
-    studentQuizAssignments = filteredAssignments.filter(
-      (assignment) => assignment.activityType === "quiz"
-    );
-    studentFlashcardsAssignments = filteredAssignments.filter(
-      (assignment) => assignment.activityType === "flashcards"
+    studentChatAssignments = mappedStudentAssignments.filter((a) => a.activityType === "chat");
+    studentQuizAssignments = mappedStudentAssignments.filter((a) => a.activityType === "quiz");
+    studentFlashcardsAssignments = mappedStudentAssignments.filter(
+      (a) => a.activityType === "flashcards",
     );
   }
 
@@ -305,6 +331,8 @@ export default async function ClassOverviewPage({
         : null;
 
   if (!isTeacher) {
+    const totalStudentAssignments =
+      studentChatAssignments.length + studentQuizAssignments.length + studentFlashcardsAssignments.length;
     timer.end({
       role: "student",
       chatAssignments: studentChatAssignments.length,
@@ -346,20 +374,24 @@ export default async function ClassOverviewPage({
         classContext={{ classId: classRow.id, isTeacher }}
         breadcrumbs={[{ label: "Dashboard", href: "/teacher/dashboard" }, { label: classRow.title }]}
       />
-      <div className="mx-auto w-full max-w-5xl px-6 py-16">
-        <header className="mb-10 flex flex-col justify-between gap-4 rounded-[2rem] border border-default bg-white px-7 py-7 shadow-sm sm:flex-row sm:items-center">
+      <div className="mx-auto w-full max-w-5xl px-6 py-16 page-enter">
+        {/* ── Page header ── */}
+        <header className="mb-8 flex flex-col justify-between gap-4 rounded-[2rem] border border-default bg-[var(--surface-card,white)] px-7 py-6 shadow-card sm:flex-row sm:items-center">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">Class Overview</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">
+              Class Overview
+            </p>
             <h1 className="editorial-title mt-2 text-4xl text-ui-primary">{classRow.title}</h1>
-            <p className="mt-2 text-sm text-ui-muted">
+            <p className="mt-1.5 text-sm text-ui-muted">
               {classRow.subject || "General"} · {classRow.level || "Mixed level"}
             </p>
           </div>
-          <div>
-            <Button asChild variant="outline" className="ui-motion-lift">
-              <Link href={`/classes/${classRow.id}?as=student`}>Preview as Student</Link>
-            </Button>
-          </div>
+          <Button asChild variant="outline" size="sm" className="self-start sm:self-center">
+            <Link href={`/classes/${classRow.id}?as=student`}>
+              <AppIcons.user className="h-3.5 w-3.5" />
+              Preview as student
+            </Link>
+          </Button>
         </header>
 
         {errorMessage ? (
@@ -367,125 +399,111 @@ export default async function ClassOverviewPage({
         ) : null}
 
         {uploadNotice ? (
-          <div className="notice-warm mb-6 rounded-xl px-4 py-3 text-sm">
-            {uploadNotice}
-          </div>
+          <div className="notice-warm mb-6 rounded-xl px-4 py-3 text-sm">{uploadNotice}</div>
         ) : null}
 
-        <section className="mb-8 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-default bg-white p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ui-subtle">
-              Blueprint
+        {/* ── Stats strip ── */}
+        <section className="mb-8 grid gap-3 sm:grid-cols-3 stagger-children">
+          <Card className="rounded-2xl p-4">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--surface-muted)] text-ui-muted">
+                <AppIcons.classes className="h-4 w-4" />
+              </div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">
+                Blueprint
+              </p>
+            </div>
+            <p className="mt-3 text-sm font-semibold text-ui-primary">
+              {publishedBlueprint ? "Published ✓" : "Draft / pending"}
             </p>
-            <p className="mt-2 text-sm font-semibold text-ui-primary">
-              {publishedBlueprint ? "Published and active" : "Draft / pending publication"}
+          </Card>
+          <Card className={cn("rounded-2xl p-4", totalAssignments > 0 && "bg-accent-soft border-[color-mix(in_srgb,var(--accent-primary)_22%,transparent)]")}>
+            <div className="flex items-center gap-2.5">
+              <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg", totalAssignments > 0 ? "bg-[var(--surface-card,white)]/60 text-accent" : "bg-[var(--surface-muted)] text-ui-muted")}>
+                <AppIcons.quiz className="h-4 w-4" />
+              </div>
+              <p className={cn("text-xs font-semibold uppercase tracking-[0.14em]", totalAssignments > 0 ? "text-accent/70" : "text-ui-subtle")}>
+                Assignments
+              </p>
+            </div>
+            <p className={cn("mt-3 text-sm font-semibold", totalAssignments > 0 ? "text-accent" : "text-ui-primary")}>
+              {totalAssignments} recent
             </p>
-          </div>
-          <div className="rounded-2xl border border-default bg-white p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ui-subtle">
-              Assignments
-            </p>
-            <p className="mt-2 text-sm font-semibold text-ui-primary">{totalAssignments} recent assignments</p>
-          </div>
-          <div className="rounded-2xl border border-default bg-white p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ui-subtle">
-              Materials
-            </p>
-            <p className="mt-2 text-sm font-semibold text-ui-primary">
+          </Card>
+          <Card className="rounded-2xl p-4">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--surface-muted)] text-ui-muted">
+                <AppIcons.flashcards className="h-4 w-4" />
+              </div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">
+                Materials
+              </p>
+            </div>
+            <p className="mt-3 text-sm font-semibold text-ui-primary">
               {materials?.length ?? 0} item{(materials?.length ?? 0) === 1 ? "" : "s"}
             </p>
-          </div>
+          </Card>
         </section>
 
+        {/* ── Blueprint + Enrollment ── */}
         <section className="grid gap-6 md:grid-cols-2">
-          <div className="rounded-3xl border border-default bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold">Course blueprint</h2>
+          <Card className="rounded-3xl p-6">
+            <h2 className="text-lg font-semibold text-ui-primary">Course blueprint</h2>
             <p className="mt-2 text-sm text-ui-muted">
-              {isTeacher
-                ? "Generate a structured blueprint from uploaded materials to unlock AI activities."
-                : publishedBlueprint
-                  ? "Review the published blueprint that powers your class activities."
-                  : "The blueprint is being prepared by your teacher."}
+              Generate a structured blueprint from uploaded materials to unlock AI activities.
             </p>
-            {isTeacher ? (
-              <Button asChild variant="warm" className="ui-motion-lift mt-6">
-                <Link href={`/classes/${classRow.id}/blueprint`}>Open blueprint studio</Link>
-              </Button>
-            ) : publishedBlueprint ? (
-              <Link
-                href={`/classes/${classRow.id}/blueprint/published`}
-                className="ui-motion-lift mt-6 inline-flex rounded-xl border border-accent px-4 py-2 text-sm font-semibold text-accent hover:-translate-y-0.5 hover:bg-accent-soft"
-              >
-                View published blueprint
-              </Link>
-            ) : (
-              <span className="mt-6 inline-flex rounded-xl border border-default px-4 py-2 text-sm text-ui-muted">
-                Awaiting publication
+            <Button asChild variant="warm" size="sm" className="mt-5 ui-motion-lift">
+              <Link href={`/classes/${classRow.id}/blueprint`}>Open blueprint studio</Link>
+            </Button>
+          </Card>
+          <Card className="rounded-3xl p-6">
+            <h2 className="text-lg font-semibold text-ui-primary">Enrollment</h2>
+            <div className="mt-3 flex items-center gap-3 rounded-2xl border border-accent bg-accent-soft px-4 py-3 text-sm text-accent">
+              <AppIcons.user className="h-4 w-4 shrink-0" />
+              <span>
+                Join code:{" "}
+                <span className="select-all font-bold tracking-wider">{classRow.join_code}</span>
               </span>
-            )}
-          </div>
-          <div className="rounded-3xl border border-default bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold">Enrollment</h2>
-            {isTeacher ? (
-              <div className="mt-3 rounded-2xl border border-accent bg-accent-soft px-4 py-3 text-sm text-accent">
-                Join code: <span className="font-semibold">{classRow.join_code}</span>
-              </div>
-            ) : (
-              <p className="mt-3 text-sm text-ui-muted">You are enrolled in this class.</p>
-            )}
+            </div>
             <p className="mt-4 text-sm text-ui-muted">
-              {classRow.description || "Add a class description and upload materials to begin."}
+              {classRow.description || "Add a description and upload materials to begin."}
             </p>
-          </div>
+          </Card>
         </section>
 
-        <section className="mt-10 rounded-3xl border border-default bg-white p-6 shadow-sm">
+        {/* ── AI Chat ── */}
+        <Card className="mt-6 rounded-3xl p-6" id="teacher-chat-monitor">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold">AI Chat</h2>
-              <p className="mt-2 text-sm text-ui-muted">
+              <h2 className="text-lg font-semibold text-ui-primary">AI Chat</h2>
+              <p className="mt-1.5 text-sm text-ui-muted">
                 {publishedBlueprint
-                  ? "Always-on class chat is available for teachers and students. Use this panel to monitor student chat history."
-                  : "Publish the blueprint to unlock always-on chat and assignment chat experiences."}
+                  ? "Monitor student chats and create guided chat assignments."
+                  : "Publish the blueprint to unlock always-on chat experiences."}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link
-                href="#teacher-chat-monitor"
-                className="ui-motion-color rounded-xl border border-default px-4 py-2 text-xs font-semibold text-ui-muted hover:border-accent hover:bg-accent-soft hover:text-accent"
-              >
-                Open chat monitor
-              </Link>
-              <Link
-                href={`/classes/${classRow.id}/activities/chat/new`}
-                className="rounded-xl border border-accent bg-accent px-4 py-2 text-xs font-semibold text-ui-primary hover:bg-accent-strong"
-              >
-                Create chat assignment
-              </Link>
+              <Button asChild variant="outline" size="sm">
+                <Link href="#teacher-chat-monitor">Chat monitor</Link>
+              </Button>
+              <Button asChild variant="warm" size="sm">
+                <Link href={`/classes/${classRow.id}/activities/chat/new`}>
+                  <AppIcons.add className="h-3.5 w-3.5" />
+                  New chat assignment
+                </Link>
+              </Button>
             </div>
           </div>
 
-          <div className="mt-5 space-y-3">
-            <p className="text-xs uppercase tracking-[0.2em] text-ui-muted">
-              Recent chat assignments
-            </p>
+          <div className="mt-5 space-y-2 stagger-children">
             {teacherChatAssignments.length > 0 ? (
               teacherChatAssignments.slice(0, 5).map((assignment) => (
-                <div
+                <AssignmentRow
                   key={assignment.assignmentId}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-default bg-white px-4 py-3"
-                >
-                  <div>
-                    <p className="text-sm font-semibold text-ui-primary">{assignment.title}</p>
-                    <p className="text-xs text-ui-muted">{formatDueDate(assignment.dueAt)}</p>
-                  </div>
-                  <Link
-                    href={`/classes/${classRow.id}/assignments/${assignment.assignmentId}/review`}
-                    className="ui-motion-color rounded-lg border border-accent px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent-soft"
-                  >
-                    Review
-                  </Link>
-                </div>
+                  assignment={assignment}
+                  reviewHref={`/classes/${classRow.id}/assignments/${assignment.assignmentId}/review`}
+                  isTeacher
+                />
               ))
             ) : (
               <p className="text-sm text-ui-muted">
@@ -499,302 +517,172 @@ export default async function ClassOverviewPage({
               <TeacherChatMonitorPanel classId={classRow.id} />
             </div>
           ) : (
-            <p className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-800">
+            <p className="mt-6 rounded-2xl status-warning p-4 text-sm">
               Publish the class blueprint before opening teacher chat monitor.
             </p>
           )}
-        </section>
+        </Card>
 
-        <section className="mt-10 rounded-3xl border border-default bg-white p-6 shadow-sm">
+        {/* ── Quizzes ── */}
+        <Card className="mt-6 rounded-3xl p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold">Quizzes</h2>
-              <p className="mt-2 text-sm text-ui-muted">
+              <h2 className="text-lg font-semibold text-ui-primary">Quizzes</h2>
+              <p className="mt-1.5 text-sm text-ui-muted">
                 {publishedBlueprint
                   ? "Generate, curate, publish, and assign blueprint-grounded quizzes."
                   : "Publish the blueprint to unlock quiz generation."}
               </p>
             </div>
-            {isTeacher ? (
-              <Link
-                href={`/classes/${classRow.id}/activities/quiz/new`}
-                className="rounded-xl border border-accent bg-accent px-4 py-2 text-xs font-semibold text-ui-primary hover:bg-accent-strong"
-              >
-                Generate quiz draft
+            <Button asChild variant="warm" size="sm">
+              <Link href={`/classes/${classRow.id}/activities/quiz/new`}>
+                <AppIcons.add className="h-3.5 w-3.5" />
+                Generate quiz
               </Link>
-            ) : null}
+            </Button>
           </div>
 
-          {isTeacher ? (
-            <div className="mt-5 space-y-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-ui-muted">
-                Recent quiz assignments
+          <div className="mt-5 space-y-2 stagger-children">
+            {teacherQuizAssignments.length > 0 ? (
+              teacherQuizAssignments.slice(0, 5).map((assignment) => (
+                <AssignmentRow
+                  key={assignment.assignmentId}
+                  assignment={assignment}
+                  reviewHref={`/classes/${classRow.id}/assignments/${assignment.assignmentId}/review`}
+                  isTeacher
+                />
+              ))
+            ) : (
+              <p className="text-sm text-ui-muted">
+                No quiz assignments yet. Generate and publish a quiz draft to begin.
               </p>
-              {teacherQuizAssignments.length > 0 ? (
-                teacherQuizAssignments.slice(0, 5).map((assignment) => (
-                  <div
-                    key={assignment.assignmentId}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-default bg-white px-4 py-3"
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-ui-primary">{assignment.title}</p>
-                      <p className="text-xs text-ui-muted">{formatDueDate(assignment.dueAt)}</p>
-                    </div>
-                    <Link
-                      href={`/classes/${classRow.id}/assignments/${assignment.assignmentId}/review`}
-                      className="ui-motion-color rounded-lg border border-accent px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent-soft"
-                    >
-                      Review
-                    </Link>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-ui-muted">
-                  No quiz assignments yet. Generate and publish a quiz draft to begin.
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="mt-5 space-y-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-ui-muted">
-                Your quiz assignments
-              </p>
-              {studentQuizAssignments.length > 0 ? (
-                studentQuizAssignments.slice(0, 5).map((assignment) => (
-                  <div
-                    key={assignment.assignmentId}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-default bg-white px-4 py-3"
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-ui-primary">{assignment.title}</p>
-                      <p className="text-xs text-ui-muted">
-                        {formatDueDate(assignment.dueAt)} · Status:{" "}
-                        {formatAssignmentStatus(assignment.status)}
-                      </p>
-                    </div>
-                    <Link
-                      href={`/classes/${classRow.id}/assignments/${assignment.assignmentId}/quiz`}
-                      className="ui-motion-color rounded-lg border border-accent px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent-soft"
-                    >
-                      Open
-                    </Link>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-ui-muted">
-                  No quiz assignments yet. Your teacher will publish them here.
-                </p>
-              )}
-            </div>
-          )}
-        </section>
+            )}
+          </div>
+        </Card>
 
-        <section className="mt-10 rounded-3xl border border-default bg-white p-6 shadow-sm">
+        {/* ── Flashcards ── */}
+        <Card className="mt-6 rounded-3xl p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold">Flashcards</h2>
-              <p className="mt-2 text-sm text-ui-muted">
+              <h2 className="text-lg font-semibold text-ui-primary">Flashcards</h2>
+              <p className="mt-1.5 text-sm text-ui-muted">
                 {publishedBlueprint
                   ? "Generate, curate, publish, and assign blueprint-grounded flashcards."
                   : "Publish the blueprint to unlock flashcard generation."}
               </p>
             </div>
-            {isTeacher ? (
-              <Link
-                href={`/classes/${classRow.id}/activities/flashcards/new`}
-                className="rounded-xl border border-accent bg-accent px-4 py-2 text-xs font-semibold text-ui-primary hover:bg-accent-strong"
-              >
-                Generate flashcards draft
+            <Button asChild variant="warm" size="sm">
+              <Link href={`/classes/${classRow.id}/activities/flashcards/new`}>
+                <AppIcons.add className="h-3.5 w-3.5" />
+                Generate flashcards
               </Link>
-            ) : null}
+            </Button>
           </div>
 
-          {isTeacher ? (
-            <div className="mt-5 space-y-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-ui-muted">
-                Recent flashcards assignments
+          <div className="mt-5 space-y-2 stagger-children">
+            {teacherFlashcardsAssignments.length > 0 ? (
+              teacherFlashcardsAssignments.slice(0, 5).map((assignment) => (
+                <AssignmentRow
+                  key={assignment.assignmentId}
+                  assignment={assignment}
+                  reviewHref={`/classes/${classRow.id}/assignments/${assignment.assignmentId}/review`}
+                  isTeacher
+                />
+              ))
+            ) : (
+              <p className="text-sm text-ui-muted">
+                No flashcards assignments yet. Generate and publish a draft to begin.
               </p>
-              {teacherFlashcardsAssignments.length > 0 ? (
-                teacherFlashcardsAssignments.slice(0, 5).map((assignment) => (
-                  <div
-                    key={assignment.assignmentId}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-default bg-white px-4 py-3"
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-ui-primary">{assignment.title}</p>
-                      <p className="text-xs text-ui-muted">{formatDueDate(assignment.dueAt)}</p>
-                    </div>
-                    <Link
-                      href={`/classes/${classRow.id}/assignments/${assignment.assignmentId}/review`}
-                      className="ui-motion-color rounded-lg border border-accent px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent-soft"
-                    >
-                      Review
-                    </Link>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-ui-muted">
-                  No flashcards assignments yet. Generate and publish a draft to begin.
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="mt-5 space-y-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-ui-muted">
-                Your flashcards assignments
-              </p>
-              {studentFlashcardsAssignments.length > 0 ? (
-                studentFlashcardsAssignments.slice(0, 5).map((assignment) => (
-                  <div
-                    key={assignment.assignmentId}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-default bg-white px-4 py-3"
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-ui-primary">{assignment.title}</p>
-                      <p className="text-xs text-ui-muted">
-                        {formatDueDate(assignment.dueAt)} · Status:{" "}
-                        {formatAssignmentStatus(assignment.status)}
-                      </p>
-                    </div>
-                    <Link
-                      href={`/classes/${classRow.id}/assignments/${assignment.assignmentId}/flashcards`}
-                      className="ui-motion-color rounded-lg border border-accent px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent-soft"
-                    >
-                      Open
-                    </Link>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-ui-muted">
-                  No flashcards assignments yet. Your teacher will publish them here.
-                </p>
-              )}
-            </div>
-          )}
-        </section>
+            )}
+          </div>
+        </Card>
 
-        {isTeacher ? (
-          <section className="mt-10 grid gap-6 lg:grid-cols-3">
-            <div className="rounded-3xl border border-default bg-white p-6 shadow-sm lg:col-span-1">
-              <h2 className="text-lg font-semibold">Upload materials</h2>
-              <p className="mt-2 text-sm text-ui-muted">
-                Supported formats: PDF, DOCX, PPTX.
-              </p>
-              <MaterialUploadForm action={uploadMaterialMutation.bind(null, classRow.id)} />
+        {/* ── Materials ── */}
+        <section className="mt-6 grid gap-6 lg:grid-cols-3" id="materials">
+          <Card className="rounded-3xl p-6 lg:col-span-1">
+            <h2 className="text-lg font-semibold text-ui-primary">Upload materials</h2>
+            <p className="mt-1.5 text-sm text-ui-muted">Supported: PDF, DOCX, PPTX.</p>
+            <MaterialUploadForm action={uploadMaterialMutation.bind(null, classRow.id)} />
+          </Card>
+
+          <Card className="rounded-3xl p-6 lg:col-span-2">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-ui-primary">Materials library</h2>
+              <span className="text-xs font-medium tracking-wide text-ui-muted">
+                {materials?.length ?? 0} items
+              </span>
             </div>
-            <div className="rounded-3xl border border-default bg-white p-6 shadow-sm lg:col-span-2">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">Materials library</h2>
-                <span className="text-xs font-medium tracking-wide text-ui-muted">
-                  {materials?.length ?? 0} items
-                </span>
-              </div>
-              <MaterialProcessingAutoRefresh processingCount={processingMaterialCount} />
-              <div className="mt-4 space-y-3">
-                {materials && materials.length > 0 ? (
-                  materials.map((material) => (
-                    <div
-                      key={material.id}
-                      className="flex flex-col gap-1 rounded-2xl border border-default bg-white p-4"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-sm font-semibold">{material.title}</p>
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`rounded-full border px-3 py-1 text-xs ${
-                              material.status === "processing"
-                                ? "border-accent bg-accent-soft text-accent"
-                                : material.status === "failed"
-                                  ? "border-rose-500/40 bg-rose-500/10 text-rose-700"
-                                  : "border-default text-ui-muted"
-                            }`}
-                          >
-                            {material.status === "processing"
-                              ? "Processing"
-                              : material.status === "failed"
-                                ? "Failed"
-                                : material.status || "Pending"}
-                          </span>
-                          {material.status === "processing" ? (
-                            <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-                          ) : null}
-                          <MaterialActionsMenu
-                            classId={classRow.id}
-                            material={{
-                              id: material.id,
-                              title: material.title,
-                              mime_type: material.mime_type ?? null,
-                              status: material.status ?? null,
-                              storage_path: material.storage_path,
-                            }}
-                          />
-                        </div>
-                      </div>
-                      <p className="text-xs text-ui-muted">
-                        {material.mime_type || "unknown type"} ·{" "}
-                        {material.size_bytes
-                          ? `${Math.round(material.size_bytes / 1024)} KB`
-                          : "size unknown"}
-                      </p>
-                      {Array.isArray(material.metadata?.warnings) &&
-                      material.metadata.warnings.length > 0 ? (
-                        <ul className="text-xs text-amber-700">
-                          {material.metadata.warnings.map((warning: string) => (
-                            <li key={warning}>{warning}</li>
-                          ))}
-                        </ul>
-                      ) : null}
-                      {material.status === "processing" ? (
-                        <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-[var(--border-default)]">
-                          <div className="h-full w-2/3 animate-pulse rounded-full bg-accent" />
-                        </div>
-                      ) : null}
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-default bg-[var(--surface-muted)] p-4 text-sm text-ui-muted">
-                    No materials yet. Upload materials to begin blueprint generation.
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-        ) : (
-          <section className="mt-10 grid gap-6 md:grid-cols-2">
-            <div className="rounded-3xl border border-default bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold">Student hub</h2>
-              <p className="mt-2 text-sm text-ui-muted">
-                Use open practice chat, then complete chat assignments as they are published.
-              </p>
-              <Link
-                href={`/classes/${classRow.id}/chat`}
-                className="ui-motion-color mt-4 inline-flex rounded-xl border border-accent px-4 py-2 text-xs font-semibold text-accent hover:bg-accent-soft"
-              >
-                Open practice chat
-              </Link>
-            </div>
-            <div className="rounded-3xl border border-default bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold">Blueprint status</h2>
-              {publishedBlueprint ? (
-                <>
-                  <p className="mt-2 text-sm text-ui-muted">
-                    The latest blueprint is published and ready.
-                  </p>
-                  <Link
-                    href={`/classes/${classRow.id}/blueprint/published`}
-                    className="ui-motion-color mt-4 inline-flex rounded-xl border border-accent px-4 py-2 text-xs font-semibold text-accent hover:bg-accent-soft"
+            <MaterialProcessingAutoRefresh processingCount={processingMaterialCount} />
+            <div className="mt-4 space-y-2">
+              {materials && materials.length > 0 ? (
+                materials.map((material) => (
+                  <div
+                    key={material.id}
+                    className="flex flex-col gap-1 rounded-2xl border border-default bg-[var(--surface-card,white)] p-4"
                   >
-                    View published blueprint
-                  </Link>
-                </>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-ui-primary">{material.title}</p>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            "rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                            material.status === "processing"
+                              ? "status-processing"
+                              : material.status === "failed"
+                                ? "status-error"
+                                : "border-default text-ui-muted",
+                          )}
+                        >
+                          {material.status === "processing"
+                            ? "Processing"
+                            : material.status === "failed"
+                              ? "Failed"
+                              : material.status || "Pending"}
+                        </span>
+                        {material.status === "processing" ? (
+                          <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
+                        ) : null}
+                        <MaterialActionsMenu
+                          classId={classRow.id}
+                          material={{
+                            id: material.id,
+                            title: material.title,
+                            mime_type: material.mime_type ?? null,
+                            status: material.status ?? null,
+                            storage_path: material.storage_path,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-ui-muted">
+                      {material.mime_type || "unknown type"} ·{" "}
+                      {material.size_bytes
+                        ? `${Math.round(material.size_bytes / 1024)} KB`
+                        : "size unknown"}
+                    </p>
+                    {Array.isArray(material.metadata?.warnings) &&
+                    material.metadata.warnings.length > 0 ? (
+                      <ul className="text-xs text-accent-strong">
+                        {material.metadata.warnings.map((warning: string) => (
+                          <li key={warning}>{warning}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {material.status === "processing" ? (
+                      <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-[var(--border-default)]">
+                        <div className="h-full w-2/3 animate-pulse rounded-full bg-accent" />
+                      </div>
+                    ) : null}
+                  </div>
+                ))
               ) : (
-                <p className="mt-2 text-sm text-ui-muted">
-                  Awaiting teacher approval. Check back soon for AI powered activities.
-                </p>
+                <div className="rounded-2xl border border-dashed border-default bg-[var(--surface-muted)] p-4 text-sm text-ui-muted">
+                  No materials yet. Upload materials to begin blueprint generation.
+                </div>
               )}
             </div>
-          </section>
-        )}
+          </Card>
+        </section>
       </div>
     </div>
   );

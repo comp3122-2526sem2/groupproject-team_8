@@ -97,12 +97,12 @@ export default async function BlueprintPublishedPage({
           { label: "Published" },
         ]}
       />
-      <div className="mx-auto w-full max-w-6xl px-6 py-16">
+      <div className="mx-auto w-full max-w-6xl px-6 py-16 page-enter">
         <header className="mb-10 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-ui-muted">Published Blueprint</p>
-            <h1 className="text-3xl font-semibold">{classRow.title}</h1>
-            <p className="text-sm text-ui-muted">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">Blueprint Studio</p>
+            <h1 className="editorial-title mt-2 text-4xl text-ui-primary">{classRow.title}</h1>
+            <p className="mt-1.5 text-sm text-ui-muted">
               {classRow.subject || "General"} · {classRow.level || "Mixed level"}
             </p>
           </div>

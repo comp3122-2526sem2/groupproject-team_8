@@ -57,7 +57,7 @@ export default function DataQueryPanel({ classId }: DataQueryPanelProps) {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="e.g. Which topics had the lowest scores? Which students need support?"
             maxLength={500}
-            className="w-full rounded-xl border border-default bg-white px-4 py-3 text-sm text-ui-primary outline-none focus-ring-warm"
+            className="w-full rounded-xl border border-default bg-[var(--surface-card,white)] px-4 py-3 text-sm text-ui-primary outline-none focus-ring-warm"
           />
           <p className="text-xs text-ui-muted">{query.length}/500</p>
           <Button

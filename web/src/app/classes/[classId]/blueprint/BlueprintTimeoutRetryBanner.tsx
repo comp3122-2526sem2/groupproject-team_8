@@ -19,7 +19,7 @@ export default function BlueprintTimeoutRetryBanner({
   }
 
   return (
-    <div className="mb-6 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-700">
+    <div className="mb-6 rounded-xl border border-[rgba(244,63,94,0.4)] bg-[rgba(244,63,94,0.08)] px-4 py-3 text-sm text-[var(--status-error-fg,#9f1239)]">
       <p>{message}</p>
       <form action={retryAction} className="mt-3">
         <PendingSubmitButton
@@ -27,7 +27,7 @@ export default function BlueprintTimeoutRetryBanner({
           pendingLabel="Retrying generation..."
           debounceMs={1200}
           onBeforeSubmit={() => setIsVisible(false)}
-          className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-lg bg-[rgba(244,63,94,0.85)] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[rgba(244,63,94,1)] disabled:cursor-not-allowed disabled:opacity-60"
         />
       </form>
     </div>

@@ -8,6 +8,7 @@ import { AppIcons } from "@/components/icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { STAGGER_CONTAINER, STAGGER_ITEM } from "@/lib/motion/presets";
 
 type QuizQuestionView = {
@@ -114,27 +115,48 @@ export default function QuizAssignmentPanel({
                   </p>
 
                   <div className="mt-3 space-y-2">
-                    {question.choices.map((choice) => (
-                      <label
-                        key={`${question.id}-${choice}`}
-                        className="flex cursor-pointer items-start gap-2 rounded-xl border border-default bg-[var(--surface-muted)] px-3 py-2 text-sm text-ui-subtle transition-colors hover:border-accent hover:bg-accent-soft"
-                      >
-                        <input
-                          type="radio"
-                          name={`question-${question.id}`}
-                          checked={answers[question.id] === choice}
-                          onChange={() =>
-                            setAnswers((current) => ({
-                              ...current,
-                              [question.id]: choice,
-                            }))
-                          }
-                          disabled={readOnly || dueLocked || attemptsRemaining === 0}
-                          className="mt-0.5 accent-[var(--accent)]"
-                        />
-                        <span>{choice}</span>
-                      </label>
-                    ))}
+                    {question.choices.map((choice) => {
+                      const isSelected = answers[question.id] === choice;
+                      return (
+                        <label
+                          key={`${question.id}-${choice}`}
+                          className={cn(
+                            "group flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition-all duration-150",
+                            isSelected
+                              ? "border-accent bg-accent-soft text-accent-strong"
+                              : "border-default bg-[var(--surface-muted)] text-ui-primary hover:border-accent hover:bg-accent-soft hover:text-accent",
+                          )}
+                        >
+                          {/* Custom radio indicator */}
+                          <span
+                            className={cn(
+                              "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors duration-150",
+                              isSelected
+                                ? "border-[var(--accent-primary)] bg-[var(--accent-primary)]"
+                                : "border-[var(--border-default)] group-hover:border-[color-mix(in_srgb,var(--accent-primary)_45%,#ffffff)]",
+                            )}
+                          >
+                            {isSelected && (
+                              <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                            )}
+                          </span>
+                          <input
+                            type="radio"
+                            name={`question-${question.id}`}
+                            checked={isSelected}
+                            onChange={() =>
+                              setAnswers((current) => ({
+                                ...current,
+                                [question.id]: choice,
+                              }))
+                            }
+                            disabled={readOnly || dueLocked || attemptsRemaining === 0}
+                            className="sr-only"
+                          />
+                          <span>{choice}</span>
+                        </label>
+                      );
+                    })}
                   </div>
 
                   {revealAnswers ? (

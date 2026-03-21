@@ -72,7 +72,7 @@ export default function StudentEngagementScatter({ students }: Props) {
                 if (!payload?.length) return null;
                 const d = payload[0].payload as (typeof data)[number];
                 return (
-                  <div className="rounded-lg border border-default bg-white p-2 text-xs shadow">
+                  <div className="rounded-lg border border-default bg-[var(--surface-card,white)] p-2 text-xs shadow">
                     <p className="font-medium">{d.name}</p>
                     <p>Score: {d.y}%</p>
                     <p>Completion: {d.x}%</p>

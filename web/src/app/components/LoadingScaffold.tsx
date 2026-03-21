@@ -17,7 +17,7 @@ export function SidebarLoadingScaffold({
 }: SidebarLoadingScaffoldProps) {
   return (
     <div className="surface-page min-h-screen">
-      <div className="fixed left-0 top-0 h-screen w-[var(--sidebar-width)] border-r border-default bg-white">
+      <div className="fixed left-0 top-0 h-screen w-[var(--sidebar-width)] border-r border-default bg-[var(--surface-card,white)]">
         <div className="flex h-16 items-center justify-between border-b border-default px-4">
           <Skeleton className="h-6 w-16" />
           <Skeleton className="h-10 w-10 rounded-full" />
@@ -51,7 +51,7 @@ export function HeaderLoadingScaffold({
 }: HeaderLoadingScaffoldProps) {
   return (
     <div className="surface-page min-h-screen">
-      <div className="border-b border-default bg-white/90">
+      <div className="border-b border-default bg-[var(--surface-page)]/90">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-6">
           <Skeleton className="h-3 w-52" />
           <Skeleton className="h-8 w-56 rounded-full" />

@@ -6,7 +6,7 @@ export default function NewChatAssignmentLoading() {
       <div className="mx-auto w-full max-w-3xl space-y-6 px-6 py-16" aria-busy="true">
         <Skeleton className="h-4 w-40" />
         <Skeleton className="h-10 w-80 max-w-full rounded-xl" />
-        <Skeleton className="h-72 w-full rounded-3xl border border-default bg-white" />
+        <Skeleton className="h-72 w-full rounded-3xl border border-default bg-[var(--surface-card,white)]" />
       </div>
     </div>
   );

@@ -188,9 +188,9 @@ export default async function SettingsPage({
                 </ul>
               </Card>
 
-              <Card className="border-amber-200 bg-amber-50 p-6">
-                <h2 className="text-lg font-semibold text-amber-800">Data Actions</h2>
-                <p className="mt-2 text-sm text-amber-700">
+              <Card className="status-warning p-6">
+                <h2 className="text-lg font-semibold">Data Actions</h2>
+                <p className="mt-2 text-sm">
                   Account deletion is not available in this interface yet. Contact your organization
                   owner if formal account removal is required.
                 </p>

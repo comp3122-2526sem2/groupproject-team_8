@@ -4,43 +4,73 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function StudentDashboardLoading() {
   return (
     <SidebarLoadingScaffold maxWidthClassName="max-w-5xl">
-      <header className="space-y-2">
-        <Skeleton className="h-4 w-32" />
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-4 w-96 max-w-full" />
+      {/* Header */}
+      <header className="flex flex-wrap items-center justify-between gap-6">
+        <div className="space-y-2">
+          <Skeleton className="h-3 w-36" />
+          <Skeleton className="h-9 w-72" />
+          <Skeleton className="h-4 w-80 max-w-full" />
+        </div>
+        <Skeleton className="h-10 w-28 rounded-xl" />
       </header>
 
+      {/* Progress metrics — 3 col */}
       <section className="mt-8">
-        <Skeleton className="h-6 w-40" />
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={`student-dashboard-progress-${i}`} className="rounded-2xl border border-default bg-white p-6">
-              <Skeleton className="h-3 w-12" />
-              <Skeleton className="mt-2 h-6 w-3/4" />
-              <Skeleton className="mt-2 h-4 w-1/2" />
-              <div className="mt-4 flex gap-2">
-                <Skeleton className="h-6 w-20 rounded-full" />
-                <Skeleton className="h-6 w-24 rounded-full" />
+        <Skeleton className="h-3 w-28" />
+        <div className="mt-3 grid grid-cols-3 gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div
+              key={`metric-${i}`}
+              className="rounded-2xl border border-default bg-[var(--surface-card,white)] p-4"
+            >
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-8 w-8 rounded-lg" />
+                <Skeleton className="h-6 w-8" />
               </div>
+              <Skeleton className="mt-2 h-3.5 w-24 max-w-full" />
             </div>
           ))}
         </div>
       </section>
 
-      <section className="mt-8">
-        <Skeleton className="h-6 w-48" />
-        <div className="mt-6 space-y-3">
+      {/* Due Now assignments */}
+      <section className="mt-6">
+        <Skeleton className="mb-3 h-3 w-20" />
+        <div className="space-y-2">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={`student-dashboard-assignment-${i}`} className="flex items-center justify-between rounded-xl border border-default bg-white p-4">
-              <div className="space-y-2">
-                <Skeleton className="h-4 w-48 max-w-full" />
-                <Skeleton className="h-3 w-32" />
+            <div
+              key={`assignment-${i}`}
+              className="flex items-center justify-between rounded-xl border border-default bg-[var(--surface-card,white)] p-3"
+            >
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-8 w-8 shrink-0 rounded-lg" />
+                <div className="space-y-1.5">
+                  <Skeleton className="h-3.5 w-40 max-w-full" />
+                  <Skeleton className="h-3 w-28" />
+                </div>
               </div>
-              <Skeleton className="h-8 w-20 rounded-lg" />
+              <Skeleton className="h-3.5 w-20 shrink-0" />
             </div>
           ))}
         </div>
       </section>
+
+      {/* My Classes card */}
+      <div className="mt-8 rounded-2xl border border-default bg-[var(--surface-card,white)] p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-5 w-28" />
+              <Skeleton className="h-5 w-16 rounded-full" />
+            </div>
+            <Skeleton className="h-3.5 w-64 max-w-full" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-8 w-24 rounded-lg" />
+            <Skeleton className="h-8 w-32 rounded-lg" />
+          </div>
+        </div>
+      </div>
     </SidebarLoadingScaffold>
   );
 }

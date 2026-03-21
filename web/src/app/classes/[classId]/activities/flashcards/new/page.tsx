@@ -62,10 +62,10 @@ export default async function NewFlashcardsDraftPage({
         { label: "New Flashcards Draft" },
       ]}
     >
-      <header className="mb-8 space-y-2">
-        <p className="text-sm font-medium text-ui-muted">Teacher Studio</p>
-        <h1 className="text-3xl font-semibold">Generate Flashcards Draft</h1>
-        <p className="text-sm text-ui-muted">
+      <header className="mb-8">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">Teacher Studio</p>
+        <h1 className="editorial-title mt-2 text-4xl text-ui-primary">Generate Flashcards Draft</h1>
+        <p className="mt-1.5 text-sm text-ui-muted">
           AI generates a draft you can edit and publish before assigning.
         </p>
       </header>

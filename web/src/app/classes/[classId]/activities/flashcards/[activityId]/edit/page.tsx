@@ -104,11 +104,11 @@ export default async function FlashcardsDraftEditPage({
         ]}
       />
 
-      <div className="mx-auto w-full max-w-5xl px-6 py-16">
-        <header className="mb-8 space-y-2">
-          <p className="text-sm font-medium text-ui-muted">Teacher Studio</p>
-          <h1 className="text-3xl font-semibold">{activity.title}</h1>
-          <p className="text-sm text-ui-muted">
+      <div className="mx-auto w-full max-w-5xl px-6 py-16 page-enter">
+        <header className="mb-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">Teacher Studio</p>
+          <h1 className="editorial-title mt-2 text-4xl text-ui-primary">{activity.title}</h1>
+          <p className="mt-1.5 text-sm text-ui-muted">
             Review and publish this flashcards activity for students.
           </p>
         </header>

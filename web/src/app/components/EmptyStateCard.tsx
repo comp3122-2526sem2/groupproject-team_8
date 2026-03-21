@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 type EmptyStateAction = {
   label: string;
   href: string;
-  variant?: "default" | "outline";
+  variant?: "default" | "outline" | "warm";
 };
 
 type EmptyStateCardProps = {
@@ -32,7 +32,7 @@ export default function EmptyStateCard({
   return (
     <Card className={cn("rounded-2xl border-dashed bg-[var(--surface-muted)] p-6", className)}>
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-xl border border-default bg-white text-ui-muted">
+        <span className="mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-xl border border-default bg-[var(--surface-card,white)] text-ui-muted">
           <Icon className="h-4 w-4" />
         </span>
         <div className="min-w-0">

@@ -68,11 +68,11 @@ export default async function NewChatAssignmentPage({
         { label: "New Chat Assignment" },
       ]}
     >
-      <header className="mb-8 space-y-2">
-        <p className="text-sm font-medium text-ui-muted">Teacher Studio</p>
-        <h1 className="text-3xl font-semibold">Create Chat Assignment</h1>
-        <p className="text-sm text-ui-muted">Assigns to all enrolled students in this class.</p>
-        <p className="text-xs text-ui-muted">Target students: {studentCount ?? 0}</p>
+      <header className="mb-8">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">Teacher Studio</p>
+        <h1 className="editorial-title mt-2 text-4xl text-ui-primary">Create Chat Assignment</h1>
+        <p className="mt-1.5 text-sm text-ui-muted">Assigns to all enrolled students in this class.</p>
+        <p className="mt-1 text-xs text-ui-muted">Target students: {studentCount ?? 0}</p>
       </header>
 
       {errorMessage ? (
