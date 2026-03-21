@@ -1,27 +1,31 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { sendOpenPracticeMessage } from "@/app/classes/[classId]/chat/actions";
-import type { ChatTurn } from "@/lib/chat/types";
+import { useMemo, useRef, useState, useTransition } from "react";
+import { GenerativeCanvas } from "@/components/canvas";
+import { sendOpenPracticeMessage, generateCanvasAction } from "@/app/classes/[classId]/chat/actions";
+import type { CanvasSpec, ChatTurn } from "@/lib/chat/types";
 import { MAX_CHAT_MESSAGE_CHARS } from "@/lib/chat/validation";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { formatDate } from "@/lib/chat/format";
 
 type OpenPracticeChatPanelProps = {
   classId: string;
 };
 
-function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
+type CanvasEntry = {
+  state: "loading" | "revealed" | "error";
+  spec: CanvasSpec | null;
+};
 
 export default function OpenPracticeChatPanel({ classId }: OpenPracticeChatPanelProps) {
   const [transcript, setTranscript] = useState<ChatTurn[]>([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [canvasMap, setCanvasMap] = useState<Map<number, CanvasEntry>>(new Map());
+  const canvasRequestRef = useRef(new Map<number, number>());
+  const conversationVersionRef = useRef(0);
 
   const serializedTranscript = useMemo(() => JSON.stringify(transcript), [transcript]);
 
@@ -60,8 +64,59 @@ export default function OpenPracticeChatPanel({ classId }: OpenPracticeChatPanel
         })),
       };
 
-      setTranscript((current) => [...current, studentTurn, assistantTurn]);
+      const nextTranscript = [...transcript, studentTurn, assistantTurn];
+      setTranscript(nextTranscript);
       setMessage("");
+
+      const canvasHint = result.response.canvas_hint;
+      if (canvasHint) {
+        // The assistant turn is at index nextTranscript.length - 1
+        const assistantIndex = nextTranscript.length - 1;
+        const requestId = (canvasRequestRef.current.get(assistantIndex) ?? 0) + 1;
+        const conversationVersion = conversationVersionRef.current;
+        canvasRequestRef.current.set(assistantIndex, requestId);
+        setCanvasMap((current) => {
+          const next = new Map(current);
+          next.set(assistantIndex, { state: "loading", spec: null });
+          return next;
+        });
+
+        void (async () => {
+          try {
+            const canvasResult = await generateCanvasAction(classId, canvasHint, {
+              studentQuestion: trimmed,
+              aiAnswer: result.response.answer,
+            });
+            if (
+              conversationVersion !== conversationVersionRef.current
+              || canvasRequestRef.current.get(assistantIndex) !== requestId
+            ) {
+              return;
+            }
+            setCanvasMap((current) => {
+              const next = new Map(current);
+              if (canvasResult.ok) {
+                next.set(assistantIndex, { state: "revealed", spec: canvasResult.spec });
+              } else {
+                next.set(assistantIndex, { state: "error", spec: null });
+              }
+              return next;
+            });
+          } catch {
+            if (
+              conversationVersion !== conversationVersionRef.current
+              || canvasRequestRef.current.get(assistantIndex) !== requestId
+            ) {
+              return;
+            }
+            setCanvasMap((current) => {
+              const next = new Map(current);
+              next.set(assistantIndex, { state: "error", spec: null });
+              return next;
+            });
+          }
+        })();
+      }
     });
   };
 
@@ -107,6 +162,12 @@ export default function OpenPracticeChatPanel({ classId }: OpenPracticeChatPanel
                   ))}
                 </ul>
               ) : null}
+              {turn.role === "assistant" && canvasMap.has(index) ? (
+                (() => {
+                  const entry = canvasMap.get(index);
+                  return entry ? <GenerativeCanvas state={entry.state} spec={entry.spec} /> : null;
+                })()
+              ) : null}
             </div>
           ))
         )}
@@ -117,37 +178,42 @@ export default function OpenPracticeChatPanel({ classId }: OpenPracticeChatPanel
         <label className="text-sm text-ui-muted" htmlFor="open-practice-message">
           Message
         </label>
-        <textarea
+        <Textarea
           id="open-practice-message"
           value={message}
           onChange={(event) => setMessage(event.target.value)}
           maxLength={MAX_CHAT_MESSAGE_CHARS}
           rows={4}
           placeholder="Ask a focused question about your class materials..."
-          className="w-full rounded-xl border border-default bg-white px-4 py-3 text-sm text-ui-primary outline-none focus-ring-warm"
         />
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-ui-muted">
             {message.length}/{MAX_CHAT_MESSAGE_CHARS}
           </p>
           <div className="flex items-center gap-2">
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
+              aria-label="Clear conversation"
               onClick={() => {
+                conversationVersionRef.current += 1;
+                canvasRequestRef.current = new Map();
                 setTranscript([]);
+                setCanvasMap(new Map());
                 setError(null);
               }}
-              className="rounded-xl border border-default px-4 py-2 text-xs font-medium text-ui-muted hover:border-accent hover:bg-accent-soft"
             >
               Clear
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
+              size="sm"
               disabled={isPending || !message.trim()}
-              className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-ui-primary disabled:cursor-not-allowed disabled:bg-accent-soft"
+              aria-label="Send message"
             >
               {isPending ? "Thinking..." : "Send"}
-            </button>
+            </Button>
           </div>
         </div>
       </form>

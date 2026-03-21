@@ -2,6 +2,9 @@
 
 import { redirect } from "next/navigation";
 import { requireVerifiedUser } from "@/lib/auth/session";
+import { parseCanvasSpec } from "@/lib/canvas/spec";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import type { CanvasSpec } from "@/lib/chat/types";
 
 export type BloomLevel = "remember" | "understand" | "apply" | "analyze" | "evaluate" | "create";
 
@@ -68,6 +71,22 @@ export async function getClassInsights(
     redirect("/login");
   }
 
+  // UUID format guard
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(classId)) {
+    return { ok: false, error: "Invalid class." };
+  }
+  // Class ownership check
+  const supabase = await createServerSupabaseClient();
+  const { data: classRow, error: enrollmentError } = await supabase
+    .from("enrollments").select("role")
+    .eq("class_id", classId).eq("user_id", userId).maybeSingle();
+  if (enrollmentError) {
+    return { ok: false, error: "Failed to verify class access." };
+  }
+  if (!["teacher", "ta"].includes(classRow?.role ?? "")) {
+    return { ok: false, error: "Unauthorized." };
+  }
+
   const baseUrl = process.env.PYTHON_BACKEND_URL?.trim();
   if (!baseUrl) {
     return { ok: false, error: "Backend not configured." };
@@ -117,6 +136,107 @@ export async function getClassInsights(
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Failed to load class insights.",
+    };
+  }
+}
+
+export type DataQueryResult =
+  | { ok: true; spec: CanvasSpec }
+  | { ok: false; error: string };
+
+export async function queryClassData(
+  classId: string,
+  query: string,
+): Promise<DataQueryResult> {
+  const safeQuery = query.trim().slice(0, 500);
+  if (!safeQuery) {
+    return { ok: false, error: "Query cannot be empty." };
+  }
+
+  let userId: string;
+  let accessToken: string | null = null;
+  try {
+    const auth = await requireVerifiedUser({ accountType: "teacher" });
+    userId = auth.user.id;
+    accessToken = auth.accessToken;
+  } catch {
+    redirect("/login");
+  }
+
+  if (!accessToken) {
+    return { ok: false, error: "Your session has expired. Please sign in again." };
+  }
+
+  // UUID format guard
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(classId)) {
+    return { ok: false, error: "Invalid class." };
+  }
+  // Class ownership check
+  const supabase = await createServerSupabaseClient();
+  const { data: classRow, error: enrollmentError } = await supabase
+    .from("enrollments").select("role")
+    .eq("class_id", classId).eq("user_id", userId).maybeSingle();
+  if (enrollmentError) {
+    return { ok: false, error: "Failed to verify class access." };
+  }
+  if (!["teacher", "ta"].includes(classRow?.role ?? "")) {
+    return { ok: false, error: "Unauthorized." };
+  }
+
+  const baseUrl = process.env.PYTHON_BACKEND_URL?.trim();
+  if (!baseUrl) {
+    return { ok: false, error: "Backend not configured." };
+  }
+
+  const apiKey = process.env.PYTHON_BACKEND_API_KEY?.trim();
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+
+  try {
+    const response = await fetch(
+      `${baseUrl.replace(/\/+$/, "")}/v1/analytics/data-query`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+          ...(apiKey ? { "x-api-key": apiKey } : {}),
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          class_id: classId,
+          query: safeQuery,
+        }),
+        signal: controller.signal,
+      },
+    );
+
+    clearTimeout(timer);
+
+    type Envelope = { ok?: boolean; data?: { spec?: CanvasSpec }; error?: { message?: string } };
+    const payload = (await response.json().catch(() => null)) as Envelope | null;
+
+    if (!response.ok || !payload?.ok || !payload.data?.spec) {
+      return {
+        ok: false,
+        error: payload?.error?.message ?? `Data query request failed (${response.status}).`,
+      };
+    }
+
+    const spec = parseCanvasSpec(payload.data.spec);
+    if (!spec) {
+      return { ok: false, error: "Invalid canvas response from server." };
+    }
+    return { ok: true, spec };
+  } catch (error) {
+    clearTimeout(timer);
+    if (error instanceof Error && error.name === "AbortError") {
+      return { ok: false, error: "Data query request timed out. Please try again." };
+    }
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Failed to query class data.",
     };
   }
 }

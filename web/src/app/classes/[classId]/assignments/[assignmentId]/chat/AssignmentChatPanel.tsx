@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { motion } from "motion/react";
 import PendingSubmitButton from "@/app/components/PendingSubmitButton";
-import { sendAssignmentMessage, submitChatAssignment } from "@/app/classes/[classId]/chat/actions";
+import { sendAssignmentMessage, submitChatAssignment, generateCanvasAction } from "@/app/classes/[classId]/chat/actions";
+import { GenerativeCanvas } from "@/components/canvas";
 import { AppIcons } from "@/components/icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -12,9 +13,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
-import type { ChatTurn } from "@/lib/chat/types";
+import type { CanvasSpec, ChatTurn } from "@/lib/chat/types";
 import { MAX_CHAT_MESSAGE_CHARS, MAX_REFLECTION_CHARS } from "@/lib/chat/validation";
 import { FADE_UP_VARIANTS, STAGGER_CONTAINER, STAGGER_ITEM } from "@/lib/motion/presets";
+import { formatDate } from "@/lib/chat/format";
 
 type AssignmentChatPanelProps = {
   classId: string;
@@ -25,13 +27,10 @@ type AssignmentChatPanelProps = {
   isSubmitted: boolean;
 };
 
-function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
+type CanvasEntry = {
+  state: "loading" | "revealed" | "error";
+  spec: CanvasSpec | null;
+};
 
 export default function AssignmentChatPanel({
   classId,
@@ -46,6 +45,8 @@ export default function AssignmentChatPanel({
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [canvasMap, setCanvasMap] = useState<Map<number, CanvasEntry>>(new Map());
+  const canvasRequestRef = useRef(new Map<number, number>());
 
   const serializedTranscript = useMemo(() => JSON.stringify(transcript), [transcript]);
 
@@ -88,8 +89,47 @@ export default function AssignmentChatPanel({
         })),
       };
 
-      setTranscript((current) => [...current, studentTurn, assistantTurn]);
+      const nextTranscript = [...transcript, studentTurn, assistantTurn];
+      setTranscript(nextTranscript);
       setMessage("");
+
+      const canvasHint = result.response.canvas_hint;
+      if (canvasHint) {
+        const assistantIndex = nextTranscript.length - 1;
+        const requestId = (canvasRequestRef.current.get(assistantIndex) ?? 0) + 1;
+        canvasRequestRef.current.set(assistantIndex, requestId);
+        setCanvasMap((current) => {
+          const next = new Map(current);
+          next.set(assistantIndex, { state: "loading", spec: null });
+          return next;
+        });
+
+        void (async () => {
+          try {
+            const canvasResult = await generateCanvasAction(classId, canvasHint, {
+              studentQuestion: trimmed,
+              aiAnswer: result.response.answer,
+            });
+            if (canvasRequestRef.current.get(assistantIndex) !== requestId) return;
+            setCanvasMap((current) => {
+              const next = new Map(current);
+              if (canvasResult.ok) {
+                next.set(assistantIndex, { state: "revealed", spec: canvasResult.spec });
+              } else {
+                next.set(assistantIndex, { state: "error", spec: null });
+              }
+              return next;
+            });
+          } catch {
+            if (canvasRequestRef.current.get(assistantIndex) !== requestId) return;
+            setCanvasMap((current) => {
+              const next = new Map(current);
+              next.set(assistantIndex, { state: "error", spec: null });
+              return next;
+            });
+          }
+        })();
+      }
     });
   };
 
@@ -147,6 +187,12 @@ export default function AssignmentChatPanel({
                           </li>
                         ))}
                       </ul>
+                    ) : null}
+                    {turn.role === "assistant" && canvasMap.has(index) ? (
+                      (() => {
+                        const entry = canvasMap.get(index);
+                        return entry ? <GenerativeCanvas state={entry.state} spec={entry.spec} /> : null;
+                      })()
                     ) : null}
                   </motion.div>
                 ))}
