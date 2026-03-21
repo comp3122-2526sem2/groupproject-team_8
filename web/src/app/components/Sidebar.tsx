@@ -107,12 +107,15 @@ export default function Sidebar({ accountType, userEmail, userDisplayName, class
 
   useEffect(() => {
     window.localStorage.setItem(COLLAPSED_KEY, isCollapsed ? "true" : "false");
+  }, [isCollapsed]);
+
+  useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--sidebar-width", isCompact ? "5rem" : "16rem");
     return () => {
       root.style.setProperty("--sidebar-width", "16rem");
     };
-  }, [isCollapsed, isCompact]);
+  }, [isCompact]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

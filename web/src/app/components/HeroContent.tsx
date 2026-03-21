@@ -37,6 +37,23 @@ const WORKFLOW_STEPS = [
   },
 ];
 
+const ROLE_CARDS = [
+  {
+    key: "teacher",
+    label: "Teacher",
+    icon: AppIcons.graduation,
+    description:
+      "Upload materials, review the AI blueprint, and publish class-ready activities with full editorial control.",
+  },
+  {
+    key: "student",
+    label: "Student",
+    icon: AppIcons.user,
+    description:
+      "Access AI-powered chat, quizzes, and flashcards grounded in exactly what your class is studying.",
+  },
+];
+
 export default function HeroContent({
   primaryHref,
   primaryLabel,
@@ -116,39 +133,21 @@ export default function HeroContent({
         transition={{ delayChildren: 0.52, staggerChildren: 0.07 }}
         className="grid gap-3 sm:grid-cols-2"
       >
-        <motion.div variants={STAGGER_ITEM}>
-          <Card className="hero-card rounded-2xl p-5">
-            <div className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-soft">
-                <AppIcons.graduation className="h-3.5 w-3.5 text-accent" />
-              </span>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ui-muted">
-                Teacher
-              </p>
-            </div>
-            <p className="mt-3 text-sm leading-relaxed text-ui-subtle">
-              Upload materials, review the AI blueprint, and publish class-ready activities with full
-              editorial control.
-            </p>
-          </Card>
-        </motion.div>
-
-        <motion.div variants={STAGGER_ITEM}>
-          <Card className="hero-card rounded-2xl p-5">
-            <div className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-soft">
-                <AppIcons.user className="h-3.5 w-3.5 text-accent" />
-              </span>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ui-muted">
-                Student
-              </p>
-            </div>
-            <p className="mt-3 text-sm leading-relaxed text-ui-subtle">
-              Access AI-powered chat, quizzes, and flashcards grounded in exactly what your class is
-              studying.
-            </p>
-          </Card>
-        </motion.div>
+        {ROLE_CARDS.map(({ key, icon: Icon, label, description }) => (
+          <motion.div key={key} variants={STAGGER_ITEM}>
+            <Card className="hero-card rounded-2xl p-5">
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-soft">
+                  <Icon className="h-3.5 w-3.5 text-accent" />
+                </span>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ui-muted">
+                  {label}
+                </p>
+              </div>
+              <p className="mt-3 text-sm leading-relaxed text-ui-subtle">{description}</p>
+            </Card>
+          </motion.div>
+        ))}
       </motion.div>
     </div>
   );
