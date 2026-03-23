@@ -29,6 +29,33 @@ INSIGHTS_CACHE_TTL_SECONDS = 3600  # 1 hour
 
 BLOOM_LEVELS_ORDERED = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
 
+TEACHING_BRIEF_SYSTEM_PROMPT = """You are an educational analytics assistant. You will receive aggregated, anonymized
+learning data for a class. Generate a concise daily teaching brief in valid JSON. No markdown, no prose —
+only the JSON object specified.
+
+Schema: {
+  "summary": string,
+  "strongest_action": string,
+  "attention_items": [{"topic": string, "detail": string}],
+  "misconceptions": [{"topic": string, "description": string}],
+  "students_to_watch": [{"student_id": string, "reason": string}],
+  "next_step": string,
+  "recommended_activity": {"type": string, "topic": string, "reason": string},
+  "evidence_basis": string
+}
+
+Rules:
+- summary: 2-3 sentences, plain English, actionable overview of the class state
+- strongest_action: single most impactful thing the teacher should do today
+- attention_items: max 3, topics/areas needing immediate attention
+- misconceptions: max 3, specific misconceptions revealed by student performance
+- students_to_watch: max 5, students who need individual attention with reason
+- next_step: one concrete next step for the teacher
+- recommended_activity: one specific activity the teacher should create or assign
+- evidence_basis: 1-2 sentences describing what data this brief is based on
+- Do not invent data not present in the input
+- Keep all values concise — this is a quick-glance widget, not a report"""
+
 ANALYTICS_SYSTEM_PROMPT = """You are an educational analytics assistant. You will receive aggregated, anonymized
 learning data for a class. Generate insights in valid JSON. No markdown, no prose —
 only the JSON object specified.
@@ -49,6 +76,12 @@ Rules:
 
 
 class ClassInsightsRequest(BaseModel):
+    user_id: str
+    class_id: str
+    force_refresh: bool = False
+
+
+class ClassTeachingBriefRequest(BaseModel):
     user_id: str
     class_id: str
     force_refresh: bool = False
@@ -531,6 +564,549 @@ def _build_empty_payload() -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Teaching Brief snapshot helpers (day-based freshness)
+# ---------------------------------------------------------------------------
+
+
+def _is_same_utc_day(dt: datetime) -> bool:
+    """Return True if *dt* falls on the current UTC calendar day."""
+    now = datetime.now(UTC)
+    return dt.date() == now.date()
+
+
+def _get_cached_teaching_brief_snapshot(
+    client: httpx.Client, settings: Settings, class_id: str
+) -> dict[str, Any] | None:
+    """Return cached teaching brief snapshot with staleness annotation, or None."""
+    base_url = _supabase_base_url(settings)
+    url = (
+        f"{base_url}/rest/v1/class_teaching_brief_snapshots"
+        f"?select=payload,generated_at,status,error_message"
+        f"&class_id=eq.{quote(class_id, safe='')}&limit=1"
+    )
+    response = client.get(url, headers=_service_headers(settings))
+    rows = _safe_json(response)
+    if not isinstance(rows, list) or not rows:
+        return None
+    row = rows[0]
+    if not isinstance(row, dict):
+        return None
+    generated_at_str = row.get("generated_at")
+    if not isinstance(generated_at_str, str):
+        return None
+    try:
+        generated_at = datetime.fromisoformat(generated_at_str.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+    status = row.get("status", "ready")
+    payload = row.get("payload")
+    is_stale = not _is_same_utc_day(generated_at) if status != "generating" else True
+
+    return {
+        "status": status,
+        "is_stale": is_stale,
+        "payload": payload,
+        "generated_at": generated_at_str,
+        "has_evidence": payload is not None or status == "generating",
+        "error_message": row.get("error_message"),
+    }
+
+
+def _upsert_teaching_brief_snapshot(
+    client: httpx.Client,
+    settings: Settings,
+    class_id: str,
+    status: str,
+    payload: dict[str, Any] | None,
+    error_message: str | None,
+) -> None:
+    """Upsert a teaching brief snapshot row."""
+    base_url = _supabase_base_url(settings)
+    url = f"{base_url}/rest/v1/class_teaching_brief_snapshots?on_conflict=class_id"
+    body: dict[str, Any] = {
+        "class_id": class_id,
+        "generated_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
+        "status": status,
+        "payload": payload,
+        "error_message": error_message,
+    }
+    response = client.post(
+        url,
+        headers={
+            **_service_headers(settings),
+            "Prefer": "resolution=merge-duplicates,return=minimal",
+        },
+        json=body,
+    )
+    if response.status_code >= 400:
+        error_payload = _safe_json(response)
+        logger.warning(
+            "Failed to upsert teaching brief snapshot for class %s: %s",
+            class_id,
+            error_payload,
+        )
+
+
+def _mark_teaching_brief_generating(
+    client: httpx.Client, settings: Settings, class_id: str
+) -> bool:
+    """Compare-and-set: mark snapshot as 'generating' only if not already generating.
+
+    Returns True if the mark succeeded (caller should proceed with generation),
+    False if another caller already set generating.
+    """
+    base_url = _supabase_base_url(settings)
+    url = (
+        f"{base_url}/rest/v1/class_teaching_brief_snapshots"
+        f"?class_id=eq.{quote(class_id, safe='')}"
+        f"&status=neq.generating"
+    )
+    response = client.patch(
+        url,
+        headers={
+            **_service_headers(settings),
+            "Prefer": "return=representation",
+        },
+        json={
+            "status": "generating",
+            "updated_at": datetime.now(UTC).isoformat(),
+        },
+    )
+    rows = _safe_json(response)
+    return isinstance(rows, list) and len(rows) > 0
+
+
+def _gather_teaching_brief_evidence(
+    client: httpx.Client, settings: Settings, class_id: str
+) -> dict[str, Any]:
+    """Gather student activity evidence for the teaching brief.
+
+    Returns a dict with 'has_evidence' bool and 'data' dict when evidence exists.
+    Reuses the same aggregation patterns as _generate_insights_payload.
+    """
+    base_url = _supabase_base_url(settings)
+
+    # 1. Enrolled students
+    enrolled_url = (
+        f"{base_url}/rest/v1/enrollments"
+        f"?select=user_id,role&class_id=eq.{quote(class_id, safe='')}&role=eq.student"
+    )
+    enrolled_resp = client.get(enrolled_url, headers=_service_headers(settings))
+    enrolled_rows = _safe_json(enrolled_resp)
+    student_ids: list[str] = []
+    if isinstance(enrolled_rows, list):
+        student_ids = [
+            r["user_id"]
+            for r in enrolled_rows
+            if isinstance(r, dict) and isinstance(r.get("user_id"), str)
+        ]
+
+    if not student_ids:
+        return {"has_evidence": False}
+
+    # 2. Published blueprint
+    blueprint_url = (
+        f"{base_url}/rest/v1/blueprints"
+        f"?select=id&class_id=eq.{quote(class_id, safe='')}&status=eq.published&order=version.desc&limit=1"
+    )
+    bp_resp = client.get(blueprint_url, headers=_service_headers(settings))
+    bp_rows = _safe_json(bp_resp)
+    blueprint_id: str | None = None
+    if isinstance(bp_rows, list) and bp_rows:
+        blueprint_id = bp_rows[0].get("id") if isinstance(bp_rows[0], dict) else None
+
+    # 3. Topics + objectives
+    topics_by_id: dict[str, dict[str, Any]] = {}
+    bloom_levels_by_topic: dict[str, list[str]] = defaultdict(list)
+    if blueprint_id:
+        topics_url = (
+            f"{base_url}/rest/v1/topics"
+            f"?select=id,title&blueprint_id=eq.{quote(blueprint_id, safe='')}"
+        )
+        topics_resp = client.get(topics_url, headers=_service_headers(settings))
+        topics_rows = _safe_json(topics_resp)
+        if isinstance(topics_rows, list):
+            for t in topics_rows:
+                if isinstance(t, dict) and isinstance(t.get("id"), str):
+                    topics_by_id[t["id"]] = {"title": t.get("title", ""), "id": t["id"]}
+
+        if topics_by_id:
+            topic_ids_param = ",".join(quote(tid, safe="") for tid in topics_by_id)
+            objectives_url = (
+                f"{base_url}/rest/v1/objectives"
+                f"?select=topic_id,level&topic_id=in.({topic_ids_param})"
+            )
+            obj_resp = client.get(objectives_url, headers=_service_headers(settings))
+            obj_rows = _safe_json(obj_resp)
+            if isinstance(obj_rows, list):
+                for obj in obj_rows:
+                    if isinstance(obj, dict) and isinstance(obj.get("topic_id"), str):
+                        lvl = obj.get("level")
+                        if isinstance(lvl, str) and lvl.strip():
+                            bloom_levels_by_topic[obj["topic_id"]].append(lvl.strip().lower())
+
+    # 4. Published activities (all types, not just quiz)
+    activities_url = (
+        f"{base_url}/rest/v1/activities"
+        f"?select=id,topic_id,title,type&class_id=eq.{quote(class_id, safe='')}&status=eq.published"
+    )
+    acts_resp = client.get(activities_url, headers=_service_headers(settings))
+    acts_rows = _safe_json(acts_resp)
+    activities_by_id: dict[str, dict[str, Any]] = {}
+    if isinstance(acts_rows, list):
+        for a in acts_rows:
+            if isinstance(a, dict) and isinstance(a.get("id"), str):
+                activities_by_id[a["id"]] = {
+                    "id": a["id"],
+                    "topic_id": a.get("topic_id"),
+                    "title": a.get("title", ""),
+                    "type": a.get("type", ""),
+                }
+
+    if not activities_by_id:
+        return {"has_evidence": False}
+
+    # 5. Assignments
+    activity_ids = list(activities_by_id.keys())
+    activity_ids_param = ",".join(quote(aid, safe="") for aid in activity_ids)
+    assignments_url = (
+        f"{base_url}/rest/v1/assignments"
+        f"?select=id,activity_id&class_id=eq.{quote(class_id, safe='')}&activity_id=in.({activity_ids_param})"
+    )
+    assigns_resp = client.get(assignments_url, headers=_service_headers(settings))
+    assigns_rows = _safe_json(assigns_resp)
+    assignment_to_activity: dict[str, str] = {}
+    if isinstance(assigns_rows, list):
+        for a in assigns_rows:
+            if isinstance(a, dict) and isinstance(a.get("id"), str) and isinstance(a.get("activity_id"), str):
+                assignment_to_activity[a["id"]] = a["activity_id"]
+
+    # 6. Submissions
+    submissions: list[dict[str, Any]] = []
+    if assignment_to_activity:
+        assignment_ids_param = ",".join(quote(aid, safe="") for aid in assignment_to_activity)
+        subs_url = (
+            f"{base_url}/rest/v1/submissions"
+            f"?select=assignment_id,student_id,score&assignment_id=in.({assignment_ids_param})"
+        )
+        subs_resp = client.get(subs_url, headers=_service_headers(settings))
+        subs_rows = _safe_json(subs_resp)
+        if isinstance(subs_rows, list):
+            submissions = [r for r in subs_rows if isinstance(r, dict)]
+
+    # 7. Chat counts
+    chat_counts: dict[str, int] = defaultdict(int)
+    if student_ids:
+        student_ids_param = ",".join(quote(sid, safe="") for sid in student_ids)
+        chat_url = (
+            f"{base_url}/rest/v1/class_chat_messages"
+            f"?select=author_user_id&class_id=eq.{quote(class_id, safe='')}"
+            f"&author_user_id=in.({student_ids_param})&author_kind=in.(student,teacher)"
+        )
+        chat_resp = client.get(chat_url, headers=_service_headers(settings))
+        chat_rows = _safe_json(chat_resp)
+        if isinstance(chat_rows, list):
+            for row in chat_rows:
+                if isinstance(row, dict) and isinstance(row.get("author_user_id"), str):
+                    chat_counts[row["author_user_id"]] += 1
+
+    # 8. Recipient completion
+    recipients: list[dict[str, Any]] = []
+    if assignment_to_activity:
+        assignment_ids_param = ",".join(quote(aid, safe="") for aid in assignment_to_activity)
+        recipients_url = (
+            f"{base_url}/rest/v1/assignment_recipients"
+            f"?select=assignment_id,student_id,status&assignment_id=in.({assignment_ids_param})"
+        )
+        rec_resp = client.get(recipients_url, headers=_service_headers(settings))
+        rec_rows = _safe_json(rec_resp)
+        if isinstance(rec_rows, list):
+            recipients = [r for r in rec_rows if isinstance(r, dict)]
+
+    # 9. Display names
+    display_names: dict[str, str] = {}
+    if student_ids:
+        student_ids_param = ",".join(quote(sid, safe="") for sid in student_ids)
+        profiles_url = (
+            f"{base_url}/rest/v1/profiles"
+            f"?select=id,display_name&id=in.({student_ids_param})"
+        )
+        profiles_resp = client.get(profiles_url, headers=_service_headers(settings))
+        profiles_rows = _safe_json(profiles_resp)
+        if isinstance(profiles_rows, list):
+            for p in profiles_rows:
+                if isinstance(p, dict) and isinstance(p.get("id"), str):
+                    display_names[p["id"]] = format_display_name(p.get("display_name"))
+
+    # Determine if there's meaningful evidence
+    has_submissions = len(submissions) > 0
+    has_chat = sum(chat_counts.values()) > 0
+    has_evidence = has_submissions or has_chat
+
+    if not has_evidence:
+        return {"has_evidence": False}
+
+    return {
+        "has_evidence": True,
+        "data": {
+            "student_ids": student_ids,
+            "topics_by_id": topics_by_id,
+            "bloom_levels_by_topic": dict(bloom_levels_by_topic),
+            "activities_by_id": activities_by_id,
+            "assignment_to_activity": assignment_to_activity,
+            "submissions": submissions,
+            "chat_counts": dict(chat_counts),
+            "recipients": recipients,
+            "display_names": display_names,
+        },
+    }
+
+
+def _generate_teaching_brief_payload(
+    settings: Settings,
+    evidence: dict[str, Any],
+) -> dict[str, Any]:
+    """Synthesize a teaching brief from gathered evidence via LLM."""
+    data = evidence["data"]
+    student_ids = data["student_ids"]
+    activities_by_id = data["activities_by_id"]
+    assignment_to_activity = data["assignment_to_activity"]
+    submissions = data["submissions"]
+    chat_counts = data["chat_counts"]
+    recipients = data["recipients"]
+    display_names = data["display_names"]
+    topics_by_id = data["topics_by_id"]
+
+    # Build per-student score aggregation
+    sub_scores: dict[tuple[str, str], list[float]] = defaultdict(list)
+    for sub in submissions:
+        aid = sub.get("assignment_id")
+        sid = sub.get("student_id")
+        score = sub.get("score")
+        if isinstance(aid, str) and isinstance(sid, str) and isinstance(score, (int, float)):
+            sub_scores[(aid, sid)].append(float(score))
+
+    # Completion
+    completion_by_student: dict[str, dict[str, str]] = defaultdict(dict)
+    for rec in recipients:
+        aid = rec.get("assignment_id")
+        sid = rec.get("student_id")
+        status = rec.get("status")
+        if isinstance(aid, str) and isinstance(sid, str) and isinstance(status, str):
+            completion_by_student[sid][aid] = status
+
+    all_assignment_ids = set(assignment_to_activity.keys())
+    students_summary: list[dict[str, Any]] = []
+
+    for student_id in student_ids:
+        attempted_scores: list[float] = []
+        for assignment_id in assignment_to_activity:
+            scores = sub_scores.get((assignment_id, student_id), [])
+            if scores:
+                attempted_scores.append(max(scores))
+
+        avg_score = sum(attempted_scores) / len(attempted_scores) if attempted_scores else 0.0
+        assigned_count = len(all_assignment_ids)
+        completed_count = sum(
+            1 for aid in all_assignment_ids
+            if completion_by_student.get(student_id, {}).get(aid) in ("submitted", "reviewed")
+        )
+        completion_rate = completed_count / assigned_count if assigned_count > 0 else 0.0
+
+        students_summary.append({
+            "student_id": student_id,
+            "display_name": display_names.get(student_id, "Unknown"),
+            "avg_score": round(avg_score, 4),
+            "completion_rate": round(completion_rate, 4),
+            "chat_messages": chat_counts.get(student_id, 0),
+            "risk_level": compute_risk_level(avg_score, completion_rate),
+        })
+
+    # Topic summary
+    topic_scores: dict[str, list[float]] = defaultdict(list)
+    for assignment_id, activity_id in assignment_to_activity.items():
+        activity_info = activities_by_id.get(activity_id, {})
+        topic_id = activity_info.get("topic_id")
+        if not topic_id:
+            continue
+        for (aid, _), scores in sub_scores.items():
+            if aid == assignment_id and scores:
+                topic_scores[topic_id].extend(scores)
+
+    topics_summary: list[dict[str, Any]] = []
+    for topic_id, topic_info in topics_by_id.items():
+        scores = topic_scores.get(topic_id, [])
+        avg = sum(scores) / len(scores) if scores else 0.0
+        topics_summary.append({
+            "topic_id": topic_id,
+            "title": topic_info.get("title", ""),
+            "avg_score": round(avg, 4),
+            "status": compute_topic_status(avg) if scores else "no_data",
+        })
+
+    stats_for_llm = {
+        "student_count": len(student_ids),
+        "topics": topics_summary,
+        "students": students_summary,
+        "activity_count": len(activities_by_id),
+        "submission_count": len(submissions),
+    }
+
+    user_prompt = f"Class learning data:\n{json.dumps(stats_for_llm, indent=2)}"
+    llm_request = GenerateRequest(
+        system=TEACHING_BRIEF_SYSTEM_PROMPT,
+        user=user_prompt,
+        temperature=0.3,
+        max_tokens=1500,
+        timeout_ms=60000,
+    )
+    llm_result = generate_with_fallback(settings, llm_request)
+    raw_content = llm_result.content.strip()
+    if raw_content.startswith("```"):
+        lines = raw_content.split("\n")
+        raw_content = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+    return json.loads(raw_content)
+
+
+def get_class_teaching_brief(
+    settings: Settings, request: ClassTeachingBriefRequest
+) -> dict[str, Any]:
+    """Main entry point for teaching brief. Handles day-based caching and generation."""
+    _require_supabase_credentials(settings)
+    timeout_seconds = max(30, settings.ai_request_timeout_ms / 1000)
+
+    with httpx.Client(timeout=timeout_seconds, trust_env=False) as client:
+        _check_teacher_enrollment(client, settings, request.user_id, request.class_id)
+
+        cached = _get_cached_teaching_brief_snapshot(client, settings, request.class_id)
+
+        # If cached and fresh and not force_refresh, return immediately
+        if cached is not None and not cached["is_stale"] and not request.force_refresh:
+            return cached
+
+        # If status is 'generating' and not force_refresh, return current state
+        if cached is not None and cached.get("status") == "generating" and not request.force_refresh:
+            return cached
+
+        # If stale or force_refresh, try to regenerate
+        if cached is not None and (cached["is_stale"] or request.force_refresh):
+            # Try CAS mark
+            marked = _mark_teaching_brief_generating(client, settings, request.class_id)
+            if not marked and not request.force_refresh:
+                # Another tab is already generating — return stale with generating status
+                return {
+                    **cached,
+                    "status": "generating",
+                }
+
+            # Generate new brief
+            try:
+                evidence = _gather_teaching_brief_evidence(client, settings, request.class_id)
+                if not evidence["has_evidence"]:
+                    _upsert_teaching_brief_snapshot(
+                        client, settings, request.class_id, "no_data", None, None
+                    )
+                    return {
+                        "status": "no_data",
+                        "is_stale": False,
+                        "payload": None,
+                        "generated_at": None,
+                        "has_evidence": False,
+                    }
+
+                payload = _generate_teaching_brief_payload(settings, evidence)
+                _upsert_teaching_brief_snapshot(
+                    client, settings, request.class_id, "ready", payload, None
+                )
+                return {
+                    "status": "ready",
+                    "is_stale": False,
+                    "payload": payload,
+                    "generated_at": datetime.now(UTC).isoformat(),
+                    "has_evidence": True,
+                }
+            except Exception as exc:
+                logger.warning(
+                    "Teaching brief generation failed for class %s: %s",
+                    request.class_id,
+                    exc,
+                )
+                # Preserve old payload on soft failure
+                _upsert_teaching_brief_snapshot(
+                    client, settings, request.class_id, "error",
+                    cached.get("payload") if cached else None,
+                    str(exc),
+                )
+                return {
+                    "status": "error",
+                    "is_stale": True if cached else False,
+                    "payload": cached.get("payload") if cached else None,
+                    "generated_at": cached.get("generated_at") if cached else None,
+                    "has_evidence": cached.get("has_evidence", False) if cached else False,
+                    "error_message": str(exc),
+                }
+
+        # No cached snapshot at all — first-time visit
+        evidence = _gather_teaching_brief_evidence(client, settings, request.class_id)
+        if not evidence["has_evidence"]:
+            _upsert_teaching_brief_snapshot(
+                client, settings, request.class_id, "no_data", None, None
+            )
+            return {
+                "status": "no_data",
+                "is_stale": False,
+                "payload": None,
+                "generated_at": None,
+                "has_evidence": False,
+            }
+
+        # Evidence exists but no snapshot yet and not force_refresh — return empty state
+        # so the UI can show a "Generate Brief" CTA button.
+        if not request.force_refresh:
+            return {
+                "status": "empty",
+                "is_stale": False,
+                "generated_at": None,
+                "payload": None,
+                "has_evidence": True,
+            }
+
+        # force_refresh=True — generate the first brief on demand
+        _mark_teaching_brief_generating(client, settings, request.class_id)
+        try:
+            payload = _generate_teaching_brief_payload(settings, evidence)
+            _upsert_teaching_brief_snapshot(
+                client, settings, request.class_id, "ready", payload, None
+            )
+            return {
+                "status": "ready",
+                "is_stale": False,
+                "payload": payload,
+                "generated_at": datetime.now(UTC).isoformat(),
+                "has_evidence": True,
+            }
+        except Exception as exc:
+            logger.warning(
+                "Teaching brief generation failed for class %s: %s",
+                request.class_id,
+                exc,
+            )
+            _upsert_teaching_brief_snapshot(
+                client, settings, request.class_id, "error", None, str(exc)
+            )
+            return {
+                "status": "error",
+                "is_stale": False,
+                "payload": None,
+                "generated_at": None,
+                "has_evidence": True,
+                "error_message": str(exc),
+            }
+
+
 def get_class_insights(settings: Settings, request: ClassInsightsRequest) -> dict[str, Any]:
     """Main entry point for class insights. Handles caching and generation."""
     _require_supabase_credentials(settings)
@@ -583,6 +1159,41 @@ async def class_insights_route(request: Request, payload: ClassInsightsRequest):
             content=ApiEnvelope(
                 ok=False,
                 error=ApiError(message=str(error), code="analytics_error"),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+
+
+@analytics_router.post("/class-teaching-brief")
+async def class_teaching_brief_route(request: Request, payload: ClassTeachingBriefRequest):
+    from app.main import _authorize_request
+
+    settings, _, unauthorized = await _authorize_request(request)
+    if unauthorized:
+        return unauthorized
+
+    try:
+        result = await run_in_threadpool(get_class_teaching_brief, settings, payload)
+        return ApiEnvelope(
+            ok=True,
+            data=result,
+            meta={"request_id": request.state.request_id},
+        ).model_dump()
+    except ClassDomainError as error:
+        return JSONResponse(
+            status_code=error.status_code,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=error.message, code=error.code),
+                meta={"request_id": request.state.request_id},
+            ).model_dump(),
+        )
+    except RuntimeError as error:
+        return JSONResponse(
+            status_code=502,
+            content=ApiEnvelope(
+                ok=False,
+                error=ApiError(message=str(error), code="teaching_brief_error"),
                 meta={"request_id": request.state.request_id},
             ).model_dump(),
         )

@@ -8,13 +8,18 @@ from unittest.mock import MagicMock, call, patch
 
 from app.analytics import (
     ClassInsightsRequest,
+    ClassTeachingBriefRequest,
     _build_empty_payload,
     _check_teacher_enrollment,
     _get_cached_snapshot,
+    _get_cached_teaching_brief_snapshot,
+    _upsert_teaching_brief_snapshot,
+    _mark_teaching_brief_generating,
     compute_risk_level,
     compute_topic_status,
     format_display_name,
     get_class_insights,
+    get_class_teaching_brief,
 )
 from app.classes import ClassDomainError
 from tests.helpers import make_settings
@@ -252,6 +257,536 @@ class GetClassInsightsCacheTests(unittest.TestCase):
         mock_generate.assert_called_once()
         mock_upsert.assert_called_once()
         self.assertEqual(result, fresh_payload)
+
+
+class TeachingBriefSnapshotCacheTests(unittest.TestCase):
+    """Tests for _get_cached_teaching_brief_snapshot — day-based freshness."""
+
+    def test_returns_snapshot_when_generated_today(self) -> None:
+        """Existing brief generated today (UTC) is returned as ready/fresh."""
+        settings = make_settings()
+        now = datetime.now(UTC)
+        client = MagicMock()
+        client.get.return_value = MagicMock(
+            json=MagicMock(return_value=[{
+                "payload": {"summary": "All good"},
+                "generated_at": now.isoformat(),
+                "status": "ready",
+                "error_message": None,
+            }])
+        )
+        result = _get_cached_teaching_brief_snapshot(client, settings, "class-1")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["status"], "ready")
+        self.assertFalse(result["is_stale"])
+        self.assertEqual(result["payload"], {"summary": "All good"})
+
+    def test_marks_stale_when_generated_yesterday(self) -> None:
+        """Brief from yesterday is returned with is_stale=True."""
+        settings = make_settings()
+        yesterday = datetime.now(UTC) - timedelta(days=1)
+        client = MagicMock()
+        client.get.return_value = MagicMock(
+            json=MagicMock(return_value=[{
+                "payload": {"summary": "Old brief"},
+                "generated_at": yesterday.isoformat(),
+                "status": "ready",
+                "error_message": None,
+            }])
+        )
+        result = _get_cached_teaching_brief_snapshot(client, settings, "class-1")
+        self.assertIsNotNone(result)
+        self.assertTrue(result["is_stale"])
+        self.assertEqual(result["payload"], {"summary": "Old brief"})
+
+    def test_returns_none_when_no_rows(self) -> None:
+        settings = make_settings()
+        client = MagicMock()
+        client.get.return_value = MagicMock(json=MagicMock(return_value=[]))
+        result = _get_cached_teaching_brief_snapshot(client, settings, "class-1")
+        self.assertIsNone(result)
+
+    def test_preserves_generating_status(self) -> None:
+        """When status is 'generating', return that status with old payload."""
+        settings = make_settings()
+        yesterday = datetime.now(UTC) - timedelta(days=1)
+        client = MagicMock()
+        client.get.return_value = MagicMock(
+            json=MagicMock(return_value=[{
+                "payload": {"summary": "Previous brief"},
+                "generated_at": yesterday.isoformat(),
+                "status": "generating",
+                "error_message": None,
+            }])
+        )
+        result = _get_cached_teaching_brief_snapshot(client, settings, "class-1")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["status"], "generating")
+        self.assertEqual(result["payload"], {"summary": "Previous brief"})
+
+    def test_utc_boundary_just_after_midnight(self) -> None:
+        """Brief generated just before UTC midnight is stale just after midnight."""
+        settings = make_settings()
+        # Simulate: generated at 23:59 yesterday UTC
+        now = datetime.now(UTC)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        just_before_midnight = today_start - timedelta(seconds=60)
+        client = MagicMock()
+        client.get.return_value = MagicMock(
+            json=MagicMock(return_value=[{
+                "payload": {"summary": "Late night brief"},
+                "generated_at": just_before_midnight.isoformat(),
+                "status": "ready",
+                "error_message": None,
+            }])
+        )
+        result = _get_cached_teaching_brief_snapshot(client, settings, "class-1")
+        self.assertIsNotNone(result)
+        self.assertTrue(result["is_stale"])
+
+    def test_utc_boundary_same_day_is_fresh(self) -> None:
+        """Brief generated just after UTC midnight today is fresh."""
+        settings = make_settings()
+        now = datetime.now(UTC)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        just_after_midnight = today_start + timedelta(seconds=60)
+        # Only test if we're past 00:01 UTC today to avoid edge case in test itself
+        if now > just_after_midnight:
+            client = MagicMock()
+            client.get.return_value = MagicMock(
+                json=MagicMock(return_value=[{
+                    "payload": {"summary": "Early morning brief"},
+                    "generated_at": just_after_midnight.isoformat(),
+                    "status": "ready",
+                    "error_message": None,
+                }])
+            )
+            result = _get_cached_teaching_brief_snapshot(client, settings, "class-1")
+            self.assertIsNotNone(result)
+            self.assertFalse(result["is_stale"])
+
+
+class TeachingBriefUpsertTests(unittest.TestCase):
+    """Tests for _upsert_teaching_brief_snapshot."""
+
+    def test_upsert_posts_correct_payload(self) -> None:
+        settings = make_settings()
+        client = MagicMock()
+        client.post.return_value = MagicMock(status_code=200)
+        _upsert_teaching_brief_snapshot(
+            client, settings, "class-1", "ready", {"summary": "Test"}, None
+        )
+        client.post.assert_called_once()
+        call_kwargs = client.post.call_args
+        body = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
+        self.assertEqual(body["class_id"], "class-1")
+        self.assertEqual(body["status"], "ready")
+        self.assertEqual(body["payload"], {"summary": "Test"})
+
+    def test_upsert_with_error_message(self) -> None:
+        settings = make_settings()
+        client = MagicMock()
+        client.post.return_value = MagicMock(status_code=200)
+        _upsert_teaching_brief_snapshot(
+            client, settings, "class-1", "error", None, "LLM call failed"
+        )
+        call_kwargs = client.post.call_args
+        body = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
+        self.assertEqual(body["status"], "error")
+        self.assertEqual(body["error_message"], "LLM call failed")
+
+
+class MarkTeachingBriefGeneratingTests(unittest.TestCase):
+    """Tests for _mark_teaching_brief_generating — CAS guard."""
+
+    def test_mark_generating_returns_true_when_not_already_generating(self) -> None:
+        settings = make_settings()
+        client = MagicMock()
+        # Simulate successful PATCH (status 200, returned rows)
+        client.patch.return_value = MagicMock(
+            status_code=200,
+            json=MagicMock(return_value=[{"id": "snap-1"}]),
+        )
+        result = _mark_teaching_brief_generating(client, settings, "class-1")
+        self.assertTrue(result)
+
+    def test_mark_generating_returns_false_when_already_generating(self) -> None:
+        settings = make_settings()
+        client = MagicMock()
+        # Simulate no rows matched (already generating)
+        client.patch.return_value = MagicMock(
+            status_code=200,
+            json=MagicMock(return_value=[]),
+        )
+        result = _mark_teaching_brief_generating(client, settings, "class-1")
+        self.assertFalse(result)
+
+
+class GetClassTeachingBriefTests(unittest.TestCase):
+    """Tests for the main get_class_teaching_brief orchestrator."""
+
+    @patch("app.analytics._generate_teaching_brief_payload")
+    @patch("app.analytics._upsert_teaching_brief_snapshot")
+    @patch("app.analytics._mark_teaching_brief_generating")
+    @patch("app.analytics._get_cached_teaching_brief_snapshot")
+    @patch("app.analytics._check_teacher_enrollment")
+    def test_returns_ready_when_fresh_today(
+        self,
+        mock_check: MagicMock,
+        mock_get_cache: MagicMock,
+        mock_mark: MagicMock,
+        mock_upsert: MagicMock,
+        mock_generate: MagicMock,
+    ) -> None:
+        settings = make_settings()
+        mock_get_cache.return_value = {
+            "status": "ready",
+            "is_stale": False,
+            "payload": {"summary": "All good"},
+            "generated_at": datetime.now(UTC).isoformat(),
+            "has_evidence": True,
+        }
+
+        result = get_class_teaching_brief(settings, ClassTeachingBriefRequest(
+            user_id="teacher-1", class_id="class-1", force_refresh=False,
+        ))
+
+        self.assertEqual(result["status"], "ready")
+        self.assertFalse(result["is_stale"])
+        self.assertEqual(result["payload"], {"summary": "All good"})
+        mock_generate.assert_not_called()
+
+    @patch("app.analytics._gather_teaching_brief_evidence")
+    @patch("app.analytics._generate_teaching_brief_payload")
+    @patch("app.analytics._upsert_teaching_brief_snapshot")
+    @patch("app.analytics._mark_teaching_brief_generating")
+    @patch("app.analytics._get_cached_teaching_brief_snapshot")
+    @patch("app.analytics._check_teacher_enrollment")
+    def test_returns_stale_payload_and_triggers_generation(
+        self,
+        mock_check: MagicMock,
+        mock_get_cache: MagicMock,
+        mock_mark: MagicMock,
+        mock_upsert: MagicMock,
+        mock_generate: MagicMock,
+        mock_gather: MagicMock,
+    ) -> None:
+        settings = make_settings()
+        yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+        mock_get_cache.return_value = {
+            "status": "ready",
+            "is_stale": True,
+            "payload": {"summary": "Old brief"},
+            "generated_at": yesterday,
+            "has_evidence": True,
+        }
+        mock_mark.return_value = True
+        mock_gather.return_value = {"has_evidence": True, "data": {}}
+        mock_generate.return_value = {"summary": "New brief"}
+
+        result = get_class_teaching_brief(settings, ClassTeachingBriefRequest(
+            user_id="teacher-1", class_id="class-1", force_refresh=False,
+        ))
+
+        # Should return ready with new payload after regeneration
+        self.assertEqual(result["status"], "ready")
+        self.assertFalse(result["is_stale"])
+        mock_generate.assert_called_once()
+        mock_upsert.assert_called()
+
+    @patch("app.analytics._generate_teaching_brief_payload")
+    @patch("app.analytics._upsert_teaching_brief_snapshot")
+    @patch("app.analytics._mark_teaching_brief_generating")
+    @patch("app.analytics._get_cached_teaching_brief_snapshot")
+    @patch("app.analytics._check_teacher_enrollment")
+    def test_does_not_regenerate_same_day_fresh(
+        self,
+        mock_check: MagicMock,
+        mock_get_cache: MagicMock,
+        mock_mark: MagicMock,
+        mock_upsert: MagicMock,
+        mock_generate: MagicMock,
+    ) -> None:
+        """After same-day regeneration completed, should not auto-refresh again."""
+        settings = make_settings()
+        mock_get_cache.return_value = {
+            "status": "ready",
+            "is_stale": False,
+            "payload": {"summary": "Fresh brief"},
+            "generated_at": datetime.now(UTC).isoformat(),
+            "has_evidence": True,
+        }
+
+        result = get_class_teaching_brief(settings, ClassTeachingBriefRequest(
+            user_id="teacher-1", class_id="class-1", force_refresh=False,
+        ))
+
+        mock_generate.assert_not_called()
+        mock_mark.assert_not_called()
+        self.assertEqual(result["status"], "ready")
+
+    @patch("app.analytics._gather_teaching_brief_evidence")
+    @patch("app.analytics._generate_teaching_brief_payload")
+    @patch("app.analytics._upsert_teaching_brief_snapshot")
+    @patch("app.analytics._mark_teaching_brief_generating")
+    @patch("app.analytics._get_cached_teaching_brief_snapshot")
+    @patch("app.analytics._check_teacher_enrollment")
+    def test_returns_no_data_when_no_evidence(
+        self,
+        mock_check: MagicMock,
+        mock_get_cache: MagicMock,
+        mock_mark: MagicMock,
+        mock_upsert: MagicMock,
+        mock_generate: MagicMock,
+        mock_gather: MagicMock,
+    ) -> None:
+        """Returns no_data when there are no meaningful student activity signals."""
+        settings = make_settings()
+        mock_get_cache.return_value = None  # No snapshot exists
+        mock_gather.return_value = {"has_evidence": False}
+
+        result = get_class_teaching_brief(settings, ClassTeachingBriefRequest(
+            user_id="teacher-1", class_id="class-1", force_refresh=False,
+        ))
+
+        self.assertEqual(result["status"], "no_data")
+        self.assertFalse(result["has_evidence"])
+        self.assertIsNone(result["payload"])
+        mock_generate.assert_not_called()
+        # Assert _upsert was called with status "no_data"
+        mock_upsert.assert_called_once()
+        upsert_call_args = mock_upsert.call_args
+        # Verify status argument is "no_data"
+        self.assertEqual(upsert_call_args[0][3], "no_data")
+
+    @patch("app.analytics._gather_teaching_brief_evidence")
+    @patch("app.analytics._generate_teaching_brief_payload")
+    @patch("app.analytics._upsert_teaching_brief_snapshot")
+    @patch("app.analytics._mark_teaching_brief_generating")
+    @patch("app.analytics._get_cached_teaching_brief_snapshot")
+    @patch("app.analytics._check_teacher_enrollment")
+    def test_returns_empty_when_evidence_but_no_snapshot(
+        self,
+        mock_check: MagicMock,
+        mock_get_cache: MagicMock,
+        mock_mark: MagicMock,
+        mock_upsert: MagicMock,
+        mock_generate: MagicMock,
+        mock_gather: MagicMock,
+    ) -> None:
+        """Returns empty when evidence exists but no brief has been generated yet (force_refresh=False)."""
+        settings = make_settings()
+        mock_get_cache.return_value = None  # No snapshot
+        mock_gather.return_value = {"has_evidence": True, "data": {}}
+
+        result = get_class_teaching_brief(settings, ClassTeachingBriefRequest(
+            user_id="teacher-1", class_id="class-1", force_refresh=False,
+        ))
+
+        # Should NOT generate — just return the empty state so UI shows CTA
+        mock_generate.assert_not_called()
+        self.assertEqual(result["status"], "empty")
+        self.assertTrue(result["has_evidence"])
+        self.assertIsNone(result["payload"])
+        self.assertIsNone(result["generated_at"])
+        self.assertFalse(result["is_stale"])
+
+    @patch("app.analytics._gather_teaching_brief_evidence")
+    @patch("app.analytics._generate_teaching_brief_payload")
+    @patch("app.analytics._upsert_teaching_brief_snapshot")
+    @patch("app.analytics._mark_teaching_brief_generating")
+    @patch("app.analytics._get_cached_teaching_brief_snapshot")
+    @patch("app.analytics._check_teacher_enrollment")
+    def test_generates_brief_on_first_force_refresh(
+        self,
+        mock_check: MagicMock,
+        mock_get_cache: MagicMock,
+        mock_mark: MagicMock,
+        mock_upsert: MagicMock,
+        mock_generate: MagicMock,
+        mock_gather: MagicMock,
+    ) -> None:
+        """When force_refresh=True and no snapshot exists but evidence does, generate the brief."""
+        settings = make_settings()
+        mock_get_cache.return_value = None  # No snapshot yet
+        mock_gather.return_value = {"has_evidence": True, "data": {}}
+        mock_mark.return_value = True
+        mock_generate.return_value = {"summary": "First brief"}
+
+        result = get_class_teaching_brief(settings, ClassTeachingBriefRequest(
+            user_id="teacher-1", class_id="class-1", force_refresh=True,
+        ))
+
+        mock_generate.assert_called_once()
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["payload"], {"summary": "First brief"})
+        self.assertTrue(result["has_evidence"])
+        self.assertFalse(result["is_stale"])
+        mock_upsert.assert_called_once()
+
+    @patch("app.analytics._generate_teaching_brief_payload")
+    @patch("app.analytics._upsert_teaching_brief_snapshot")
+    @patch("app.analytics._mark_teaching_brief_generating")
+    @patch("app.analytics._get_cached_teaching_brief_snapshot")
+    @patch("app.analytics._check_teacher_enrollment")
+    def test_keeps_old_payload_during_concurrent_generation(
+        self,
+        mock_check: MagicMock,
+        mock_get_cache: MagicMock,
+        mock_mark: MagicMock,
+        mock_upsert: MagicMock,
+        mock_generate: MagicMock,
+    ) -> None:
+        """When status is already 'generating', reuse that state."""
+        settings = make_settings()
+        mock_get_cache.return_value = {
+            "status": "generating",
+            "is_stale": True,
+            "payload": {"summary": "Previous brief"},
+            "generated_at": (datetime.now(UTC) - timedelta(days=1)).isoformat(),
+            "has_evidence": True,
+        }
+
+        result = get_class_teaching_brief(settings, ClassTeachingBriefRequest(
+            user_id="teacher-1", class_id="class-1", force_refresh=False,
+        ))
+
+        self.assertEqual(result["status"], "generating")
+        self.assertEqual(result["payload"], {"summary": "Previous brief"})
+        mock_generate.assert_not_called()
+        mock_mark.assert_not_called()
+
+    @patch("app.analytics._gather_teaching_brief_evidence")
+    @patch("app.analytics._generate_teaching_brief_payload")
+    @patch("app.analytics._upsert_teaching_brief_snapshot")
+    @patch("app.analytics._mark_teaching_brief_generating")
+    @patch("app.analytics._get_cached_teaching_brief_snapshot")
+    @patch("app.analytics._check_teacher_enrollment")
+    def test_force_refresh_bypasses_freshness(
+        self,
+        mock_check: MagicMock,
+        mock_get_cache: MagicMock,
+        mock_mark: MagicMock,
+        mock_upsert: MagicMock,
+        mock_generate: MagicMock,
+        mock_gather: MagicMock,
+    ) -> None:
+        """Force refresh ignores freshness and triggers regeneration."""
+        settings = make_settings()
+        mock_get_cache.return_value = {
+            "status": "ready",
+            "is_stale": False,
+            "payload": {"summary": "Current brief"},
+            "generated_at": datetime.now(UTC).isoformat(),
+            "has_evidence": True,
+        }
+        mock_mark.return_value = True
+        mock_gather.return_value = {"has_evidence": True, "data": {}}
+        mock_generate.return_value = {"summary": "Force-refreshed brief"}
+
+        result = get_class_teaching_brief(settings, ClassTeachingBriefRequest(
+            user_id="teacher-1", class_id="class-1", force_refresh=True,
+        ))
+
+        mock_generate.assert_called_once()
+        self.assertEqual(result["payload"], {"summary": "Force-refreshed brief"})
+
+    @patch("app.analytics._get_cached_teaching_brief_snapshot")
+    @patch("app.analytics._check_teacher_enrollment")
+    def test_student_cannot_access_brief(
+        self,
+        mock_check: MagicMock,
+        mock_get_cache: MagicMock,
+    ) -> None:
+        """Student/unauthorized actor cannot fetch teaching brief."""
+        settings = make_settings()
+        mock_check.side_effect = ClassDomainError(
+            message="Only teachers and TAs can access class insights.",
+            code="forbidden",
+            status_code=403,
+        )
+
+        with self.assertRaises(ClassDomainError) as ctx:
+            get_class_teaching_brief(settings, ClassTeachingBriefRequest(
+                user_id="student-1", class_id="class-1",
+            ))
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    @patch("app.analytics._generate_teaching_brief_payload")
+    @patch("app.analytics._upsert_teaching_brief_snapshot")
+    @patch("app.analytics._mark_teaching_brief_generating")
+    @patch("app.analytics._get_cached_teaching_brief_snapshot")
+    @patch("app.analytics._check_teacher_enrollment")
+    def test_stale_concurrent_mark_fails_skips_generation(
+        self,
+        mock_check: MagicMock,
+        mock_get_cache: MagicMock,
+        mock_mark: MagicMock,
+        mock_upsert: MagicMock,
+        mock_generate: MagicMock,
+    ) -> None:
+        """If CAS mark fails (another tab already generating), return stale payload."""
+        settings = make_settings()
+        yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+        mock_get_cache.return_value = {
+            "status": "ready",
+            "is_stale": True,
+            "payload": {"summary": "Old brief"},
+            "generated_at": yesterday,
+            "has_evidence": True,
+        }
+        mock_mark.return_value = False  # CAS failed — already generating
+
+        result = get_class_teaching_brief(settings, ClassTeachingBriefRequest(
+            user_id="teacher-1", class_id="class-1", force_refresh=False,
+        ))
+
+        mock_generate.assert_not_called()
+        self.assertEqual(result["status"], "generating")
+        self.assertEqual(result["payload"], {"summary": "Old brief"})
+        self.assertTrue(result["is_stale"])
+
+    @patch("app.analytics._generate_teaching_brief_payload")
+    @patch("app.analytics._upsert_teaching_brief_snapshot")
+    @patch("app.analytics._mark_teaching_brief_generating")
+    @patch("app.analytics._get_cached_teaching_brief_snapshot")
+    @patch("app.analytics._check_teacher_enrollment")
+    def test_error_preserves_old_payload_on_stale_regeneration(
+        self,
+        mock_check: MagicMock,
+        mock_get_cache: MagicMock,
+        mock_mark: MagicMock,
+        mock_upsert: MagicMock,
+        mock_generate: MagicMock,
+    ) -> None:
+        """When LLM generation fails on stale brief, preserve old payload and return error status."""
+        settings = make_settings()
+        yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+        old_payload = {"summary": "old brief"}
+        mock_get_cache.return_value = {
+            "status": "ready",
+            "is_stale": True,
+            "payload": old_payload,
+            "generated_at": yesterday,
+            "has_evidence": True,
+        }
+        mock_mark.return_value = True  # CAS succeeds
+        mock_generate.side_effect = Exception("LLM call failed")
+
+        result = get_class_teaching_brief(settings, ClassTeachingBriefRequest(
+            user_id="teacher-1", class_id="class-1", force_refresh=False,
+        ))
+
+        # Assert result preserves old payload and has error status
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["payload"], old_payload)
+        # Assert _upsert was called with error status and old payload
+        mock_upsert.assert_called_once()
+        upsert_call_args = mock_upsert.call_args
+        # Status is the 4th argument (index 3)
+        self.assertEqual(upsert_call_args[0][3], "error")
+        # Payload is the 5th argument (index 4)
+        self.assertEqual(upsert_call_args[0][4], old_payload)
 
 
 if __name__ == "__main__":
