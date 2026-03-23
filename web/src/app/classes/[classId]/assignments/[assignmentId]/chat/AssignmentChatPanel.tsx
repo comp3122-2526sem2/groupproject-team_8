@@ -168,7 +168,7 @@ export default function AssignmentChatPanel({
                     className={`rounded-2xl border p-4 ${
                       turn.role === "student"
                         ? "border-accent bg-accent-soft text-accent"
-                        : "border-default bg-white text-ui-primary"
+                        : "border-default bg-[var(--surface-card,white)] text-ui-primary"
                     }`}
                   >
                     <div className="mb-2 flex items-center justify-between gap-3">

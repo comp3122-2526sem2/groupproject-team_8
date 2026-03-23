@@ -230,7 +230,7 @@ export default function FileUploadZone({
           <ul className="space-y-2">
             {files.map((file) => (
               <li key={file.id}>
-                <Card className={cn("rounded-lg border p-3", file.status === "error" && "border-rose-200 bg-rose-50") }>
+                <Card className={cn("rounded-lg border p-3", file.status === "error" && "border-[rgba(244,63,94,0.3)] bg-[rgba(244,63,94,0.06)]") }>
                   <div className="flex items-center gap-3">
                     <div className="shrink-0">{getFileIcon(file.file.type)}</div>
                     <div className="min-w-0 flex-1">

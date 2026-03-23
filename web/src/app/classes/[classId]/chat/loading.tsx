@@ -7,7 +7,7 @@ export default function OpenPracticeChatLoading() {
         <Skeleton className="h-4 w-40" />
         <Skeleton className="h-10 w-80 max-w-full rounded-xl" />
         <Skeleton className="h-4 w-60 max-w-full" />
-        <Skeleton className="h-96 w-full rounded-3xl border border-default bg-white" />
+        <Skeleton className="h-96 w-full rounded-3xl border border-default bg-[var(--surface-card,white)]" />
       </div>
     </div>
   );

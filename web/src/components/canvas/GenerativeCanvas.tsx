@@ -47,8 +47,8 @@ export default function GenerativeCanvas({ state, spec, title, error }: Generati
 
   if (state === "error") {
     return (
-      <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
-        <p className="text-xs text-rose-600">{error ?? "Could not generate visual."}</p>
+      <div className="mt-3 rounded-2xl border border-[rgba(244,63,94,0.3)] bg-[rgba(244,63,94,0.08)] px-4 py-3">
+        <p className="text-xs text-[var(--status-error-fg)]">{error ?? "Could not generate visual."}</p>
       </div>
     );
   }

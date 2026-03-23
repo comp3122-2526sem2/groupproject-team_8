@@ -28,10 +28,10 @@ export default async function NewClassPage({
       maxWidthClassName="max-w-4xl"
       breadcrumbs={[{ label: "Dashboard", href: "/teacher/dashboard" }, { label: "New class" }]}
     >
-      <header className="mb-10 space-y-2">
-        <p className="text-sm font-medium text-ui-muted">Teacher Studio</p>
-        <h1 className="text-3xl font-semibold text-ui-primary">Create a class</h1>
-        <p className="text-sm text-ui-muted">
+      <header className="mb-10">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">Teacher Studio</p>
+        <h1 className="editorial-title mt-2 text-4xl text-ui-primary">Create a class</h1>
+        <p className="mt-1.5 text-sm text-ui-muted">
           Set the subject and level. A join code will be generated for students.
         </p>
       </header>

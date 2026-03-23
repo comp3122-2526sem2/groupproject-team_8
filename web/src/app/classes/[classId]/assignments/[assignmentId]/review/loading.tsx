@@ -10,7 +10,7 @@ export default function AssignmentReviewLoading() {
           {Array.from({ length: 2 }).map((_, index) => (
             <Skeleton
               key={`review-loading-${index}`}
-              className="h-64 w-full rounded-3xl border border-default bg-white"
+              className="h-64 w-full rounded-3xl border border-default bg-[var(--surface-card,white)]"
             />
           ))}
         </div>

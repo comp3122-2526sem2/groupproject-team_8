@@ -127,7 +127,7 @@ export default function OpenPracticeChatPanel({ classId }: OpenPracticeChatPanel
       </div>
 
       {error ? (
-        <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-700">
+        <div className="rounded-xl border border-[rgba(244,63,94,0.4)] bg-[rgba(244,63,94,0.08)] px-4 py-3 text-sm text-[var(--status-error-fg,#9f1239)]">
           {error}
         </div>
       ) : null}
@@ -144,7 +144,7 @@ export default function OpenPracticeChatPanel({ classId }: OpenPracticeChatPanel
               className={`rounded-2xl border p-4 ${
                 turn.role === "student"
                   ? "border-accent bg-accent-soft text-accent"
-                  : "border-default bg-white text-ui-primary"
+                  : "border-default bg-[var(--surface-card,white)] text-ui-primary"
               }`}
             >
               <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.2em]">

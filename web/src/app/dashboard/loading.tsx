@@ -13,7 +13,7 @@ export default function DashboardLoading() {
         {Array.from({ length: 4 }).map((_, index) => (
           <div
             key={`dashboard-skeleton-${index}`}
-            className="rounded-3xl border border-default bg-white p-6"
+            className="rounded-3xl border border-default bg-[var(--surface-card,white)] p-6"
           >
             <Skeleton className="h-3 w-20" />
             <Skeleton className="mt-3 h-6 w-2/3" />

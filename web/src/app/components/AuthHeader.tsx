@@ -104,7 +104,7 @@ export default function AuthHeader({
   const shellClass =
     tone === "subtle"
       ? "sticky top-0 z-40 border-b border-default bg-[var(--surface-muted)]/95 backdrop-blur"
-      : "sticky top-0 z-40 border-b border-default bg-white/95 backdrop-blur";
+      : "sticky top-0 z-40 border-b border-default bg-[var(--surface-page)]/95 backdrop-blur";
 
   if (classContext) {
     const openAiChatHref = classContext.preserveStudentPreview
@@ -112,7 +112,7 @@ export default function AuthHeader({
       : `/classes/${classContext.classId}?view=chat`;
 
     return (
-      <div className="sticky top-0 z-40 border-b border-default bg-white/90 backdrop-blur">
+      <div className="sticky top-0 z-40 border-b border-default bg-[var(--surface-page)]/90 backdrop-blur">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-6">
           <h1 className="editorial-title truncate text-2xl text-ui-primary">{classTitle}</h1>
           <div className="flex flex-wrap items-center gap-2">
@@ -124,7 +124,7 @@ export default function AuthHeader({
                 <Button asChild variant="outline" size="sm">
                   <Link href={`/classes/${classContext.classId}#teacher-chat-monitor`}>Chat Monitor</Link>
                 </Button>
-                <Button asChild variant="default" size="sm">
+                <Button asChild variant="warm" size="sm">
                   <Link href={`/classes/${classContext.classId}/activities/quiz/new`}>New Quiz</Link>
                 </Button>
               </>
@@ -171,7 +171,7 @@ export default function AuthHeader({
             </Button>
           )}
           <form action={signOut}>
-            <Button type="submit" variant="ghost" size="sm" className="hover:bg-rose-50 hover:text-rose-700">
+            <Button type="submit" variant="ghost" size="sm" className="hover:bg-[rgba(244,63,94,0.08)] hover:text-[var(--status-error-fg,#9f1239)]">
               <AppIcons.logout className="h-4 w-4" />
               Sign Out
             </Button>

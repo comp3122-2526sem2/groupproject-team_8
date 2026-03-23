@@ -1,5 +1,6 @@
 import Link from "next/link";
 import DashboardHashRedirect from "@/app/components/DashboardHashRedirect";
+import EmptyStateCard from "@/app/components/EmptyStateCard";
 import RoleAppShell from "@/app/components/RoleAppShell";
 import { AppIcons } from "@/components/icons";
 import { Button } from "@/components/ui/button";
@@ -206,8 +207,10 @@ export default async function StudentDashboardPage() {
 
           {(current.length > 0 || upcoming.length > 0 || completed.length > 0) && (
             <section className="mt-8">
-              <h2 className="text-lg font-semibold text-ui-primary">Your Progress</h2>
-              <div className="mt-4 grid grid-cols-3 gap-4">
+              <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">
+                Your Progress
+              </h2>
+              <div className="mt-3 grid grid-cols-3 gap-4 stagger-children">
                 <MetricCard icon={AppIcons.clock} count={current.length} label="Due Now" variant="accent" />
                 <MetricCard icon={AppIcons.calendar} count={upcoming.length} label="Upcoming" />
                 <MetricCard icon={AppIcons.success} count={completed.length} label="Completed" />
@@ -215,29 +218,48 @@ export default async function StudentDashboardPage() {
 
               {current.length > 0 && (
                 <div className="mt-6">
-                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-accent">
+                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-accent">
                     Due Now
                   </h3>
-                  <div className="space-y-2">
+                  <div className="space-y-2 stagger-children">
                     {current.slice(0, 3).map((assignment) => {
                       const ActivityIcon = getActivityIcon(assignment.activityType);
+                      const isOverdue =
+                        assignment.dueAt && new Date(assignment.dueAt) < new Date();
                       return (
                         <Link
                           key={assignment.id}
                           href={`/classes/${assignment.classId}/assignments/${assignment.id}/${assignment.activityType}`}
-                          className="ui-motion-lift flex items-center justify-between rounded-xl border border-default bg-white p-3 shadow-sm hover:border-accent hover:shadow-md"
+                          className={cn(
+                            "ui-motion-lift flex items-center justify-between rounded-xl border p-3 hover:-translate-y-0.5 hover:shadow-md",
+                            isOverdue
+                              ? "border-[rgba(244,63,94,0.25)] bg-[rgba(244,63,94,0.08)] hover:border-[rgba(244,63,94,0.4)]"
+                              : "border-accent/20 bg-accent-soft hover:border-accent",
+                          )}
                         >
                           <div className="flex items-center gap-3">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-soft text-accent">
+                            <div
+                              className={cn(
+                                "flex h-8 w-8 items-center justify-center rounded-lg",
+                                isOverdue ? "bg-[rgba(244,63,94,0.12)] text-[var(--status-error-fg,#9f1239)]" : "bg-white/60 text-accent",
+                              )}
+                            >
                               <ActivityIcon className="h-4 w-4" />
                             </div>
                             <div>
-                              <p className="text-sm font-medium text-ui-primary">{assignment.activityTitle}</p>
+                              <p className="text-sm font-semibold text-ui-primary">
+                                {assignment.activityTitle}
+                              </p>
                               <p className="text-xs text-ui-muted">{assignment.classTitle}</p>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-xs font-medium text-accent">
+                          <div className="text-right shrink-0">
+                            <p
+                              className={cn(
+                                "text-xs font-semibold",
+                                isOverdue ? "text-[var(--status-error-fg,#9f1239)]" : "text-accent",
+                              )}
+                            >
                               {assignment.status === "in_progress"
                                 ? "In Progress"
                                 : formatDueDate(assignment.dueAt)}
@@ -252,28 +274,32 @@ export default async function StudentDashboardPage() {
 
               {upcoming.length > 0 && (
                 <div className="mt-6">
-                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-ui-muted">
+                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">
                     Upcoming
                   </h3>
-                  <div className="space-y-2">
+                  <div className="space-y-2 stagger-children">
                     {upcoming.slice(0, 3).map((assignment) => {
                       const ActivityIcon = getActivityIcon(assignment.activityType);
                       return (
                         <Link
                           key={assignment.id}
                           href={`/classes/${assignment.classId}/assignments/${assignment.id}/${assignment.activityType}`}
-                          className="ui-motion-lift flex items-center justify-between rounded-xl border border-default bg-white p-3 shadow-sm hover:border-accent hover:shadow-md"
+                          className="ui-motion-lift flex items-center justify-between rounded-xl border border-default bg-[var(--surface-card,white)] p-3 hover:-translate-y-0.5 hover:border-accent hover:shadow-md"
                         >
                           <div className="flex items-center gap-3">
                             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--surface-muted)] text-ui-muted">
                               <ActivityIcon className="h-4 w-4" />
                             </div>
                             <div>
-                              <p className="text-sm font-medium text-ui-primary">{assignment.activityTitle}</p>
+                              <p className="text-sm font-medium text-ui-primary">
+                                {assignment.activityTitle}
+                              </p>
                               <p className="text-xs text-ui-muted">{assignment.classTitle}</p>
                             </div>
                           </div>
-                          <p className="text-xs font-medium text-ui-muted">{formatDueDate(assignment.dueAt)}</p>
+                          <p className="text-xs font-medium text-ui-muted shrink-0">
+                            {formatDueDate(assignment.dueAt)}
+                          </p>
                         </Link>
                       );
                     })}
@@ -283,24 +309,45 @@ export default async function StudentDashboardPage() {
             </section>
           )}
 
+          {/* My Classes card */}
           <Card className="mt-8 rounded-2xl p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <h2 className="text-lg font-semibold text-ui-primary">My Classes</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold text-ui-primary">My Classes</h2>
+                  <span className="inline-flex items-center rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-semibold text-accent">
+                    {classes?.length ?? 0} joined
+                  </span>
+                </div>
                 <p className="mt-1 text-sm text-ui-muted">
-                  See all your joined classes and open each class workspace from one dedicated view.
+                  See all your joined classes and open each class workspace.
                 </p>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="rounded-full border border-default bg-[var(--surface-muted)] px-3 py-1 text-sm font-semibold text-ui-primary">
-                  {classes?.length ?? 0} joined
-                </span>
-                <Button asChild variant="default">
+              <div className="flex items-center gap-2">
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/join">
+                    <AppIcons.add className="h-3.5 w-3.5" />
+                    Join class
+                  </Link>
+                </Button>
+                <Button asChild variant="warm">
                   <Link href="/student/classes">Open My Classes</Link>
                 </Button>
               </div>
             </div>
           </Card>
+
+          {/* Empty state when no assignments */}
+          {current.length === 0 && upcoming.length === 0 && completed.length === 0 && (
+            <div className="mt-8">
+              <EmptyStateCard
+                icon="classes"
+                title="No assignments yet"
+                description="You'll see your upcoming and current assignments here once your teacher assigns activities."
+                primaryAction={{ label: "Browse my classes", href: "/student/classes", variant: "warm" }}
+              />
+            </div>
+          )}
       </main>
     </RoleAppShell>
   );

@@ -175,11 +175,11 @@ export default async function BlueprintPage({
           { label: "Blueprint" },
         ]}
       />
-      <div className="mx-auto w-full max-w-6xl px-6 py-16">
-        <header className="mb-10 space-y-2">
-          <p className="text-sm font-medium text-ui-muted">Course Blueprint</p>
-          <h1 className="text-3xl font-semibold">{classRow.title}</h1>
-          <p className="text-sm text-ui-muted">
+      <div className="mx-auto w-full max-w-6xl px-6 py-16 page-enter">
+        <header className="mb-10">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">Blueprint Studio</p>
+          <h1 className="editorial-title mt-2 text-4xl text-ui-primary">{classRow.title}</h1>
+          <p className="mt-1.5 text-sm text-ui-muted">
             {classRow.subject || "General"} · {classRow.level || "Mixed level"}
           </p>
         </header>

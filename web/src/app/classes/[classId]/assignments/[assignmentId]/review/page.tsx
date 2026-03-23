@@ -358,11 +358,11 @@ export default async function AssignmentReviewPage({
         ]}
       />
 
-      <div className="mx-auto w-full max-w-6xl px-6 py-16">
-        <header className="mb-8 space-y-2">
-          <p className="text-sm font-medium text-ui-muted">Teacher Review</p>
-          <h1 className="text-3xl font-semibold">{activity.title}</h1>
-          <p className="text-sm text-ui-muted">
+      <div className="mx-auto w-full max-w-6xl px-6 py-16 page-enter">
+        <header className="mb-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">Teacher Review</p>
+          <h1 className="editorial-title mt-2 text-4xl text-ui-primary">{activity.title}</h1>
+          <p className="mt-1.5 text-sm text-ui-muted">
             {assignment.due_at
               ? `Due ${new Date(assignment.due_at).toLocaleString()}`
               : "No due date"}
@@ -484,7 +484,7 @@ export default async function AssignmentReviewPage({
                                 (turn, index) => (
                                   <div
                                     key={`${latestSubmission.id}-${turn.role}-${turn.createdAt}-${index}`}
-                                    className="rounded-xl border border-default bg-white p-3"
+                                    className="rounded-xl border border-default bg-[var(--surface-card,white)] p-3"
                                   >
                                     <p className="text-xs uppercase tracking-[0.2em] text-ui-muted">
                                       {turn.role === "student" ? "Student" : "AI Tutor"}
@@ -597,7 +597,7 @@ export default async function AssignmentReviewPage({
                                 return (
                                   <div
                                     key={`${attempt.id}-${answer.questionId}-${answerIndex}`}
-                                    className="rounded-xl border border-default bg-white p-3"
+                                    className="rounded-xl border border-default bg-[var(--surface-card,white)] p-3"
                                   >
                                     <p className="text-xs uppercase tracking-[0.2em] text-ui-muted">
                                       Question {answerIndex + 1}
@@ -609,7 +609,7 @@ export default async function AssignmentReviewPage({
                                       Selected: {answer.selectedChoice}
                                     </p>
                                     <p
-                                      className={`text-sm ${isCorrect ? "text-emerald-700" : "text-rose-700"}`}
+                                      className={`text-sm ${isCorrect ? "text-emerald-700" : "text-[var(--status-error-fg)]"}`}
                                     >
                                       Correct answer: {question?.answer ?? "Unavailable"}
                                     </p>
@@ -625,7 +625,7 @@ export default async function AssignmentReviewPage({
 
                             <form
                               action={reviewQuizSubmission.bind(null, classId, attempt.id)}
-                              className="mt-4 space-y-4 rounded-2xl border border-default bg-white p-4"
+                              className="mt-4 space-y-4 rounded-2xl border border-default bg-[var(--surface-muted)] p-4"
                             >
                               <input type="hidden" name="assignment_id" value={assignmentId} />
 

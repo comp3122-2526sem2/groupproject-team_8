@@ -317,7 +317,7 @@ export default function ClassChatWorkspace({
 
   return (
     <div className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
-      <aside className="rounded-3xl border border-default bg-white p-4">
+      <aside className="rounded-3xl border border-default bg-[var(--surface-card,white)] p-4">
         <div className="mb-4 flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-ui-muted">Chats</h3>
           {!readOnly ? (
@@ -356,7 +356,7 @@ export default function ClassChatWorkspace({
                     <button
                       type="button"
                       onClick={() => handleArchiveSession(session.id)}
-                      className="mt-2 text-xs text-rose-700 hover:text-rose-700"
+                      className="mt-2 text-xs text-[var(--status-error-fg,#9f1239)] hover:text-[var(--status-error-fg,#9f1239)]"
                     >
                       Archive
                     </button>
@@ -372,7 +372,7 @@ export default function ClassChatWorkspace({
         </div>
       </aside>
 
-      <section className="rounded-3xl border border-default bg-white p-4">
+      <section className="rounded-3xl border border-default bg-[var(--surface-card,white)] p-4">
         <header className="mb-4 border-b border-default pb-4">
           <p className="text-xs uppercase tracking-[0.2em] text-ui-muted">Always-on AI Chat</p>
           <h2 className="mt-1 text-xl font-semibold text-ui-primary">
@@ -384,7 +384,7 @@ export default function ClassChatWorkspace({
         </header>
 
         {error ? (
-          <div className="mb-3 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-700">
+          <div className="mb-3 rounded-xl border border-[rgba(244,63,94,0.4)] bg-[rgba(244,63,94,0.08)] px-4 py-3 text-sm text-[var(--status-error-fg,#9f1239)]">
             {error}
           </div>
         ) : null}
@@ -473,13 +473,13 @@ export default function ClassChatWorkspace({
               >
                 <div className="flex items-center gap-3">
                   <span
-                    className="inline-flex h-5 w-5 animate-spin rounded-full border-2 border-amber-200/20 border-t-amber-200"
+                    className="inline-flex h-5 w-5 animate-spin rounded-full border-2 border-accent/20 border-t-accent"
                     aria-hidden="true"
                   />
                   <p className="text-sm italic">Compacting our conversation so we can keep chatting...</p>
                 </div>
                 <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/30" aria-hidden="true">
-                  <div className="h-full w-1/2 animate-pulse rounded-full bg-amber-100/80" />
+                  <div className="h-full w-1/2 animate-pulse rounded-full bg-accent/70" />
                 </div>
               </div>
             </div>
@@ -500,7 +500,7 @@ export default function ClassChatWorkspace({
               maxLength={MAX_CHAT_MESSAGE_CHARS}
               rows={4}
               placeholder="Ask a question to learn, review, or consolidate your understanding..."
-              className="w-full rounded-xl border border-default bg-white px-4 py-3 text-sm text-ui-primary outline-none focus-ring-warm"
+              className="w-full rounded-xl border border-default bg-[var(--surface-card,white)] px-4 py-3 text-sm text-ui-primary outline-none focus-ring-warm"
             />
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs text-ui-muted">

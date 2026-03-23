@@ -904,7 +904,7 @@ export function BlueprintEditor({
                           handleAddPrerequisite(topic.clientId, value);
                           event.currentTarget.value = "";
                         }}
-                        className="mt-3 w-full rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm"
+                        className="mt-3 w-full rounded-xl border border-default bg-[var(--surface-card,white)] px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm"
                       >
                         <option value="">Add prerequisite</option>
                         {availablePrereqs.map((option) => (
@@ -982,7 +982,7 @@ export function BlueprintEditor({
                                   level: event.target.value,
                                 })
                               }
-                              className="mt-2 w-full rounded-xl border border-default bg-white px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm"
+                              className="mt-2 w-full rounded-xl border border-default bg-[var(--surface-card,white)] px-3 py-2 text-sm text-ui-primary outline-none focus-ring-warm"
                             >
                               <option value="">Select level</option>
                               {BLOOM_LEVELS.map((level) => (
@@ -1038,7 +1038,7 @@ export function BlueprintEditor({
               </div>
               <div className="flex flex-col items-end gap-2">
                 {draftByteSize > MAX_DRAFT_BYTES ? (
-                  <p className="text-xs text-amber-700">
+                  <p className="text-xs text-accent-strong">
                     Draft size is {Math.round(draftByteSize / 1024)}KB. Saving might fail for very
                     large drafts.
                   </p>
@@ -1062,14 +1062,14 @@ export function BlueprintEditor({
               {draft.topics.length === 0 ? (
                 <p className="text-sm text-ui-muted">Add topics to see the map.</p>
               ) : topicMap.errorMessage ? (
-                <div className="space-y-2 text-sm text-amber-700">
+                <div className="space-y-2 text-sm text-accent-strong">
                   <p>{topicMap.errorMessage}</p>
-                  <p className="text-xs text-amber-700">{dependencySummary}</p>
+                  <p className="text-xs text-accent-strong">{dependencySummary}</p>
                 </div>
               ) : topicMap.hasCycle ? (
-                <div className="space-y-3 text-sm text-amber-700">
+                <div className="space-y-3 text-sm text-accent-strong">
                   <p>Cycle detected in prerequisites. Fix the loop to view the map.</p>
-                  <ul className="list-disc pl-5 text-xs text-amber-700">
+                  <ul className="list-disc pl-5 text-xs text-accent-strong">
                     {draft.topics.map((topic) => (
                       <li key={`cycle-${topic.clientId}`}>
                         {topic.title || "Untitled"} →

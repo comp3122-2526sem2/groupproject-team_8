@@ -592,7 +592,7 @@ export async function getMaterialSignedUrl(
 
   const { data, error: signedError } = await supabase.storage
     .from(MATERIALS_BUCKET)
-    .createSignedUrl(material.storage_path, 60);
+    .createSignedUrl(material.storage_path, 300);
 
   if (signedError || !data?.signedUrl) {
     return { ok: false, error: signedError?.message ?? "Failed to generate download link." };

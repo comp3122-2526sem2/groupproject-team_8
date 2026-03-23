@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { requireVerifiedUser } from "@/lib/auth/session";
 import { startServerTimer } from "@/lib/perf";
+import { cn } from "@/lib/utils";
 
 type ClassSummary = {
   id: string;
@@ -16,6 +17,30 @@ type ClassSummary = {
   owner_id: string;
   created_at?: string;
 };
+
+const QUICK_ACTIONS = [
+  {
+    label: "Create class",
+    description: "Start a new class for students",
+    href: "/classes/new",
+    icon: "add" as const,
+    accent: true,
+  },
+  {
+    label: "View all classes",
+    description: "Manage your teaching classes",
+    href: "/teacher/classes",
+    icon: "classes" as const,
+    accent: false,
+  },
+  {
+    label: "Help & docs",
+    description: "Learn how to use this platform",
+    href: "/help",
+    icon: "help" as const,
+    accent: false,
+  },
+];
 
 export default async function TeacherDashboardPage() {
   const timer = startServerTimer("teacher-dashboard");
@@ -59,9 +84,7 @@ export default async function TeacherDashboardPage() {
   );
   const ownedClassCount = ownedClasses.length;
   const assistantClassCount = classes.filter((classItem) => classItem.owner_id !== user.id).length;
-  const recentClasses = classes
-    .filter((classItem) => enrollmentMap.get(classItem.id))
-    .slice(0, 3);
+  const recentClasses = classes.slice(0, 3);
   const displayName = profile.display_name?.trim() || user.email || "Teacher";
 
   timer.end({ classes: classes.length });
@@ -74,77 +97,181 @@ export default async function TeacherDashboardPage() {
     >
       <DashboardHashRedirect classesHref="/teacher/classes" />
       <main className="mx-auto max-w-5xl p-6 pt-16 page-enter">
-          <header className="flex flex-wrap items-center justify-between gap-6">
-            <div>
+        {/* ── Header ── */}
+        <header className="flex flex-wrap items-start justify-between gap-6">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">
+              Teacher Dashboard
+            </p>
+            <h1 className="editorial-title mt-2 text-4xl text-ui-primary">
+              Welcome, {displayName}
+            </h1>
+            <p className="mt-2 text-sm text-ui-muted">
+              Manage classes, materials, and assignment workflows.
+            </p>
+          </div>
+          <Button asChild variant="warm">
+            <Link href="/classes/new">
+              <AppIcons.add className="h-4 w-4" />
+              Create class
+            </Link>
+          </Button>
+        </header>
+
+        {/* ── Stats ── */}
+        <section className="mt-8 grid gap-4 sm:grid-cols-3 stagger-children">
+          <Card className="rounded-2xl p-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-ui-muted">
+                <AppIcons.classes className="h-4 w-4" />
+              </div>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">
-                Teacher Dashboard
-              </p>
-              <h1 className="editorial-title mt-2 text-4xl text-ui-primary">Welcome, {displayName}</h1>
-              <p className="mt-2 text-sm text-ui-muted">
-                Manage classes, materials, and assignment workflows.
+                Total classes
               </p>
             </div>
-            <Button asChild variant="warm">
-              <Link href="/classes/new">
-                <AppIcons.add className="h-4 w-4" />
-                Create class
-              </Link>
-            </Button>
-          </header>
+            <p className="mt-4 text-3xl font-bold text-ui-primary">{classes.length}</p>
+            <p className="mt-1.5 text-sm text-ui-muted">Across all classes where you teach.</p>
+          </Card>
 
-          <section className="mt-8 grid gap-4 sm:grid-cols-3">
-            <Card className="rounded-2xl p-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">Total classes</p>
-              <p className="mt-3 text-3xl font-semibold text-ui-primary">{classes.length}</p>
-              <p className="mt-2 text-sm text-ui-muted">Across all classes where you teach.</p>
-            </Card>
-            <Card className="rounded-2xl p-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">Owner classes</p>
-              <p className="mt-3 text-3xl font-semibold text-ui-primary">{ownedClassCount}</p>
-              <p className="mt-2 text-sm text-ui-muted">Classes you created and manage.</p>
-            </Card>
-            <Card className="rounded-2xl p-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">Assistant roles</p>
-              <p className="mt-3 text-3xl font-semibold text-ui-primary">{assistantClassCount}</p>
-              <p className="mt-2 text-sm text-ui-muted">Classes where you support as teacher or TA.</p>
-            </Card>
-          </section>
-
-          <section className="mt-8">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold text-ui-primary">Recent classes</h2>
-              <Link href="/teacher/classes" className="text-sm font-semibold text-accent hover:text-accent-strong">
-                View all
-              </Link>
+          <Card className="rounded-2xl p-5 bg-accent-soft border-[color-mix(in_srgb,var(--accent-primary)_25%,transparent)]">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--surface-card,white)]/60 text-accent">
+                <AppIcons.graduation className="h-4 w-4" />
+              </div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent/70">
+                Your classes
+              </p>
             </div>
-            <div className="grid gap-4 md:grid-cols-3">
-              {recentClasses.length > 0 ? (
-                recentClasses.map((classItem) => (
+            <p className="mt-4 text-3xl font-bold text-accent">{ownedClassCount}</p>
+            <p className="mt-1.5 text-sm text-accent/60">Classes you created and manage.</p>
+          </Card>
+
+          <Card className="rounded-2xl p-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-ui-muted">
+                <AppIcons.user className="h-4 w-4" />
+              </div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">
+                Assistant roles
+              </p>
+            </div>
+            <p className="mt-4 text-3xl font-bold text-ui-primary">{assistantClassCount}</p>
+            <p className="mt-1.5 text-sm text-ui-muted">Classes where you teach or assist as TA.</p>
+          </Card>
+        </section>
+
+        {/* ── Quick actions ── */}
+        <section className="mt-8">
+          <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">
+            Quick actions
+          </h2>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3 stagger-children">
+            {QUICK_ACTIONS.map((action) => {
+              const Icon = AppIcons[action.icon];
+              return (
+                <Link
+                  key={action.href}
+                  href={action.href}
+                  className={cn(
+                    "ui-motion-lift group flex items-center gap-3 rounded-2xl border p-4 hover:-translate-y-0.5",
+                    action.accent
+                      ? "border-accent/30 bg-accent-soft hover:bg-accent hover:border-accent hover:shadow-[var(--shadow-accent)]"
+                      : "border-default bg-[var(--surface-card,white)] hover:border-accent hover:shadow-md",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors duration-200",
+                      action.accent
+                        ? "bg-white/40 text-accent group-hover:bg-white/20 group-hover:text-white"
+                        : "bg-[var(--surface-muted)] text-ui-muted group-hover:bg-accent-soft group-hover:text-accent",
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p
+                      className={cn(
+                        "text-sm font-semibold transition-colors duration-200",
+                        action.accent
+                          ? "text-accent group-hover:text-white"
+                          : "text-ui-primary",
+                      )}
+                    >
+                      {action.label}
+                    </p>
+                    <p
+                      className={cn(
+                        "truncate text-xs transition-colors duration-200",
+                        action.accent
+                          ? "text-accent/70 group-hover:text-white/80"
+                          : "text-ui-muted",
+                      )}
+                    >
+                      {action.description}
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* ── Recent classes ── */}
+        <section className="mt-8">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-ui-primary">Recent classes</h2>
+            <Link
+              href="/teacher/classes"
+              className="ui-motion-color text-sm font-semibold text-accent hover:text-accent-strong"
+            >
+              View all →
+            </Link>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3 stagger-children">
+            {recentClasses.length > 0 ? (
+              recentClasses.map((classItem) => {
+                const enrollmentRole = enrollmentMap.get(classItem.id);
+                const roleLabel =
+                  classItem.owner_id === user.id
+                    ? "Owner"
+                    : enrollmentRole === "ta"
+                      ? "TA"
+                      : "Teacher";
+                return (
                   <Link
                     key={classItem.id}
                     href={`/classes/${classItem.id}`}
-                    className="ui-motion-lift block rounded-2xl border border-default bg-white p-5 shadow-sm hover:-translate-y-0.5 hover:border-accent hover:shadow-md"
+                    className="ui-motion-lift block rounded-2xl border border-default bg-[var(--surface-card,white)] p-5 hover:-translate-y-0.5 hover:border-accent hover:shadow-md"
                   >
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ui-subtle">
-                      {classItem.owner_id === user.id ? "Teacher" : "TA"}
-                    </p>
-                    <h3 className="mt-2 text-lg font-semibold text-ui-primary">{classItem.title}</h3>
-                    <p className="mt-2 text-sm text-ui-muted">
-                      {classItem.subject || "General"} · {classItem.level || "Mixed"}
-                    </p>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="inline-flex items-center rounded-full bg-accent-soft px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+                        {roleLabel}
+                      </span>
+                      {classItem.subject && (
+                        <span className="inline-flex items-center rounded-full border border-default bg-[var(--surface-muted)] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ui-muted">
+                          {classItem.subject}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="mt-3 text-base font-semibold text-ui-primary leading-snug">
+                      {classItem.title}
+                    </h3>
+                    <p className="mt-1.5 text-xs text-ui-muted">{classItem.level || "Mixed level"}</p>
                   </Link>
-                ))
-              ) : (
-                <EmptyStateCard
-                  className="md:col-span-3"
-                  icon="classes"
-                  title="No classes yet"
-                  description="Create your first class to start building a blueprint and assigning activities."
-                  primaryAction={{ label: "Create class", href: "/classes/new", variant: "default" }}
-                />
-              )}
-            </div>
-          </section>
+                );
+              })
+            ) : (
+              <EmptyStateCard
+                className="md:col-span-3"
+                icon="classes"
+                title="No classes yet"
+                description="Create your first class to start building a blueprint and assigning activities."
+                primaryAction={{ label: "Create class", href: "/classes/new", variant: "warm" }}
+              />
+            )}
+          </div>
+        </section>
       </main>
     </RoleAppShell>
   );

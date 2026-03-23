@@ -10,17 +10,17 @@ export default function BlueprintLoading() {
         <Skeleton className="h-4 w-64 max-w-full" />
       </div>
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="rounded-3xl border border-default bg-white p-6 lg:col-span-2">
+        <div className="rounded-3xl border border-default bg-[var(--surface-card,white)] p-6 lg:col-span-2">
           <Skeleton className="h-6 w-56" />
           <Skeleton className="mt-3 h-4 w-full" />
         </div>
-        <div className="rounded-3xl border border-default bg-white p-6">
+        <div className="rounded-3xl border border-default bg-[var(--surface-card,white)] p-6">
           <Skeleton className="h-6 w-36" />
           <Skeleton className="mt-3 h-4 w-full" />
           <Skeleton className="mt-6 h-10 w-full rounded-xl" />
         </div>
       </div>
-      <div className="rounded-3xl border border-default bg-white p-6">
+      <div className="rounded-3xl border border-default bg-[var(--surface-card,white)] p-6">
         <Skeleton className="h-6 w-28" />
         <div className="mt-6 space-y-3">
           {Array.from({ length: 3 }).map((_, index) => (
