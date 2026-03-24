@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppIcons } from "@/components/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,29 +39,53 @@ export function AdaptiveTeachingBriefWidget({
 }: AdaptiveTeachingBriefWidgetProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [liveState, setLiveState] = useState(state);
+  const autoRefreshAttemptedRef = useRef(false);
+  const refreshInFlightRef = useRef(false);
   const generatedLabel = useMemo(() => formatGeneratedAt(liveState.generatedAt), [liveState.generatedAt]);
   const hasPayload = !!liveState.payload;
 
   useEffect(() => {
     setLiveState(state);
+    if (!state.isStale || state.status === "generating") {
+      autoRefreshAttemptedRef.current = false;
+    }
   }, [state]);
 
-  useEffect(() => {
-    if (!classId || !liveState.isStale || liveState.status === "generating") {
+  async function runRefresh() {
+    if (!classId || refreshInFlightRef.current) {
       return;
     }
 
-    let isCancelled = false;
+    refreshInFlightRef.current = true;
 
-    void refreshClassTeachingBrief(classId).then((nextState) => {
-      if (!isCancelled) {
-        setLiveState(nextState);
-      }
-    });
+    try {
+      const nextState = await refreshClassTeachingBrief(classId);
+      setLiveState(nextState);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to refresh teaching brief.";
+      setLiveState((current) => ({
+        ...current,
+        status: "error",
+        isRefreshing: false,
+        error: message,
+      }));
+    } finally {
+      refreshInFlightRef.current = false;
+    }
+  }
 
-    return () => {
-      isCancelled = true;
-    };
+  useEffect(() => {
+    if (
+      !classId ||
+      !liveState.isStale ||
+      liveState.status === "generating" ||
+      autoRefreshAttemptedRef.current
+    ) {
+      return;
+    }
+
+    autoRefreshAttemptedRef.current = true;
+    void runRefresh();
   }, [classId, liveState.isStale, liveState.status]);
 
   async function handleRefresh() {
@@ -70,12 +94,7 @@ export function AdaptiveTeachingBriefWidget({
       return;
     }
 
-    if (!classId) {
-      return;
-    }
-
-    const nextState = await refreshClassTeachingBrief(classId);
-    setLiveState(nextState);
+    await runRefresh();
   }
 
   return (

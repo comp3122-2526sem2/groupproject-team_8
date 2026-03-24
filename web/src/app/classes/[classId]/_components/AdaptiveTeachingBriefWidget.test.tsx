@@ -210,16 +210,13 @@ describe("AdaptiveTeachingBriefWidget", () => {
     );
   });
 
-  it("updates the visible summary after stale auto-refresh resolves", async () => {
+  it("does not auto-refresh repeatedly after a failed stale refresh", async () => {
     vi.mocked(refreshClassTeachingBrief).mockResolvedValue(
       makeState({
-        generatedAt: "2026-03-24T10:15:00Z",
-        isStale: false,
+        status: "error",
+        isStale: true,
         isRefreshing: false,
-        payload: {
-          ...makeState().payload!,
-          summary: "Updated brief after refresh.",
-        },
+        error: "Refresh failed.",
       }),
     );
 
@@ -235,10 +232,32 @@ describe("AdaptiveTeachingBriefWidget", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/updated brief after refresh/i)).toBeInTheDocument();
+      expect(refreshClassTeachingBrief).toHaveBeenCalledTimes(1);
     });
-    expect(screen.queryByText(/outdated/i)).not.toBeInTheDocument();
+  });
+
+  it("shows a compact error state when a refresh request rejects and no payload exists", async () => {
+    const user = userEvent.setup();
+    vi.mocked(refreshClassTeachingBrief).mockRejectedValue(new Error("Network broke"));
+
+    render(
+      <AdaptiveTeachingBriefWidget
+        classId="11111111-1111-1111-1111-111111111111"
+        state={makeState({
+          status: "empty",
+          generatedAt: null,
+          payload: null,
+        })}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /create today's brief/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/network broke/i)).toBeInTheDocument();
+    });
   });
 });
+
 
 
