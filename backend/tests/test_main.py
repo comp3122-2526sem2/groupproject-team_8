@@ -103,6 +103,13 @@ class MainTests(unittest.TestCase):
         self.assertEqual(response.json()["error"]["code"], "user_id_mismatch")
 
 
+class GuestQuotaDefaultTests(unittest.TestCase):
+    def test_guest_quota_defaults_match_approved_spec(self) -> None:
+        settings = make_settings()
+        self.assertEqual(settings.guest_max_concurrent_ai_requests, 10)
+        self.assertEqual(settings.guest_embedding_limit, 5)
+
+
 class EnvelopeGuardTests(unittest.TestCase):
     def _client_with_boom(self, exc: Exception) -> TestClient:
         """Return a TestClient where run_in_threadpool raises `exc`."""
