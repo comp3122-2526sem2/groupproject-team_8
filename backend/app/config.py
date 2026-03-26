@@ -29,6 +29,8 @@ class Settings:
     ai_provider_default: str
     ai_request_timeout_ms: int
     ai_embedding_timeout_ms: int
+    guest_max_concurrent_ai_requests: int
+    guest_max_ai_requests_per_feature: int
     openrouter_api_key: str | None
     openrouter_model: str | None
     openrouter_embedding_model: str | None
@@ -61,6 +63,8 @@ def get_settings() -> Settings:
             "AI_PROVIDER_DEFAULT", "openrouter").strip().lower(),
         ai_request_timeout_ms=_get_int("AI_REQUEST_TIMEOUT_MS", 30000),
         ai_embedding_timeout_ms=_get_int("AI_EMBEDDING_TIMEOUT_MS", 30000),
+        guest_max_concurrent_ai_requests=_get_int("GUEST_MAX_CONCURRENT_AI_REQUESTS", 1),
+        guest_max_ai_requests_per_feature=_get_int("GUEST_MAX_AI_REQUESTS_PER_FEATURE", 25),
         openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
         openrouter_model=os.getenv("OPENROUTER_MODEL"),
         openrouter_embedding_model=os.getenv("OPENROUTER_EMBEDDING_MODEL"),

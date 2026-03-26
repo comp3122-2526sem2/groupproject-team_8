@@ -26,6 +26,12 @@ from app.chat_workspace import (
 from app.classes import ClassDomainError, create_class, join_class
 from app.config import Settings, get_settings
 from app.flashcards import generate_flashcards
+from app.guest_rate_limit import (
+    acquire_guest_ai_slot,
+    check_guest_ai_access,
+    increment_guest_ai_usage,
+    release_guest_ai_slot,
+)
 from app.materials import dispatch_material_job, process_material_jobs
 from app.providers import generate_embeddings_with_fallback, generate_with_fallback
 from app.quiz import generate_quiz
@@ -138,6 +144,24 @@ async def _resolve_actor_user_id(
     request: Request,
     settings: Settings,
 ) -> tuple[str | None, JSONResponse | None]:
+    actor, user_error = await _resolve_actor_user(request, settings)
+    if user_error:
+        return None, user_error
+    user_id = actor.get("id") if isinstance(actor, dict) else None
+    if not isinstance(user_id, str) or not user_id.strip():
+        return None, _error_response(
+            request,
+            status_code=401,
+            message="Invalid user token.",
+            code="invalid_user_token",
+        )
+    return user_id.strip(), None
+
+
+async def _resolve_actor_user(
+    request: Request,
+    settings: Settings,
+) -> tuple[dict[str, Any] | None, JSONResponse | None]:
     token = _parse_bearer_token(request.headers.get("authorization"))
     if not token or token == settings.python_backend_api_key:
         return None, _error_response(
@@ -198,7 +222,7 @@ async def _resolve_actor_user_id(
             message="Invalid user token.",
             code="invalid_user_token",
         )
-    return user_id.strip(), None
+    return payload, None
 
 
 def _safe_json_dict(response: httpx.Response) -> dict[str, Any]:
@@ -225,6 +249,58 @@ def _bind_actor_user_id(
             code="user_id_mismatch",
         )
     return cast(UserBoundPayload, payload.model_copy(update={"user_id": actor_user_id})), None
+
+
+def _is_guest_actor(actor: dict[str, Any] | None) -> bool:
+    return bool(isinstance(actor, dict) and actor.get("is_anonymous") is True)
+
+
+def _get_sandbox_id(payload: BaseModel) -> str | None:
+    sandbox_id = getattr(payload, "sandbox_id", None)
+    if isinstance(sandbox_id, str) and sandbox_id.strip():
+        return sandbox_id.strip()
+    return None
+
+
+async def _enforce_guest_ai_guards(
+    request: Request,
+    settings: Settings,
+    payload: BaseModel,
+    feature: str,
+) -> tuple[str | None, JSONResponse | None]:
+    actor, actor_error = await _resolve_actor_user(request, settings)
+    if actor_error:
+        return None, actor_error
+    if not _is_guest_actor(actor):
+        return None, None
+
+    sandbox_id = _get_sandbox_id(payload)
+    if not sandbox_id:
+        return None, _error_response(
+            request,
+            status_code=400,
+            message="Guest requests must include sandbox_id.",
+            code="guest_sandbox_required",
+        )
+
+    allowed, reason = check_guest_ai_access(settings, sandbox_id, feature)
+    if not allowed:
+        return None, _error_response(
+            request,
+            status_code=429,
+            message=reason or f"Guest {feature} limit reached.",
+            code="guest_rate_limit",
+        )
+
+    if not acquire_guest_ai_slot(settings, sandbox_id):
+        return None, _error_response(
+            request,
+            status_code=429,
+            message=f"Guest concurrent {feature} limit reached.",
+            code="guest_concurrent_limit",
+        )
+
+    return sandbox_id, None
 
 
 @app.get("/healthz")
@@ -417,8 +493,19 @@ async def generate_blueprints(request: Request, payload: BlueprintGenerateReques
     if unauthorized:
         return unauthorized
 
+    guest_sandbox_id, guest_error = await _enforce_guest_ai_guards(
+        request,
+        settings,
+        payload,
+        "blueprint",
+    )
+    if guest_error:
+        return guest_error
+
     try:
         result = await run_in_threadpool(generate_blueprint, settings, payload)
+        if guest_sandbox_id:
+            increment_guest_ai_usage(guest_sandbox_id, "blueprint")
         return ApiEnvelope(
             ok=True,
             data=result.model_dump(),
@@ -433,6 +520,9 @@ async def generate_blueprints(request: Request, payload: BlueprintGenerateReques
                 meta={"request_id": request.state.request_id},
             ).model_dump(),
         )
+    finally:
+        if guest_sandbox_id:
+            release_guest_ai_slot(guest_sandbox_id)
 
 
 @app.post("/v1/quiz/generate")
@@ -441,8 +531,19 @@ async def generate_quizzes(request: Request, payload: QuizGenerateRequest):
     if unauthorized:
         return unauthorized
 
+    guest_sandbox_id, guest_error = await _enforce_guest_ai_guards(
+        request,
+        settings,
+        payload,
+        "quiz",
+    )
+    if guest_error:
+        return guest_error
+
     try:
         result = await run_in_threadpool(generate_quiz, settings, payload)
+        if guest_sandbox_id:
+            increment_guest_ai_usage(guest_sandbox_id, "quiz")
         return ApiEnvelope(
             ok=True,
             data=result.model_dump(),
@@ -457,6 +558,9 @@ async def generate_quizzes(request: Request, payload: QuizGenerateRequest):
                 meta={"request_id": request.state.request_id},
             ).model_dump(),
         )
+    finally:
+        if guest_sandbox_id:
+            release_guest_ai_slot(guest_sandbox_id)
 
 
 @app.post("/v1/flashcards/generate")
@@ -465,8 +569,19 @@ async def generate_flashcards_route(request: Request, payload: FlashcardsGenerat
     if unauthorized:
         return unauthorized
 
+    guest_sandbox_id, guest_error = await _enforce_guest_ai_guards(
+        request,
+        settings,
+        payload,
+        "flashcards",
+    )
+    if guest_error:
+        return guest_error
+
     try:
         result = await run_in_threadpool(generate_flashcards, settings, payload)
+        if guest_sandbox_id:
+            increment_guest_ai_usage(guest_sandbox_id, "flashcards")
         return ApiEnvelope(
             ok=True,
             data=result.model_dump(),
@@ -481,6 +596,9 @@ async def generate_flashcards_route(request: Request, payload: FlashcardsGenerat
                 meta={"request_id": request.state.request_id},
             ).model_dump(),
         )
+    finally:
+        if guest_sandbox_id:
+            release_guest_ai_slot(guest_sandbox_id)
 
 
 @app.post("/v1/chat/generate")
@@ -495,8 +613,19 @@ async def generate_chat_route(request: Request, payload: ChatGenerateRequest):
         return payload_error
     assert bound_payload is not None
 
+    guest_sandbox_id, guest_error = await _enforce_guest_ai_guards(
+        request,
+        settings,
+        bound_payload,
+        "chat",
+    )
+    if guest_error:
+        return guest_error
+
     try:
         result = await run_in_threadpool(generate_chat, settings, bound_payload)
+        if guest_sandbox_id:
+            increment_guest_ai_usage(guest_sandbox_id, "chat")
         return ApiEnvelope(
             ok=True,
             data=result.model_dump(),
@@ -511,6 +640,9 @@ async def generate_chat_route(request: Request, payload: ChatGenerateRequest):
                 meta={"request_id": request.state.request_id},
             ).model_dump(),
         )
+    finally:
+        if guest_sandbox_id:
+            release_guest_ai_slot(guest_sandbox_id)
 
 
 @app.post("/v1/chat/canvas")

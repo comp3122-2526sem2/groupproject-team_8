@@ -13,6 +13,8 @@ def make_settings(**overrides: Any) -> Settings:
         ai_provider_default="openrouter",
         ai_request_timeout_ms=30000,
         ai_embedding_timeout_ms=30000,
+        guest_max_concurrent_ai_requests=1,
+        guest_max_ai_requests_per_feature=25,
         openrouter_api_key="or-key",
         openrouter_model="or-model",
         openrouter_embedding_model="or-embed",

@@ -93,6 +93,7 @@ class EnvelopeGuardTests(unittest.TestCase):
             patch("app.main.get_settings", return_value=settings),
             patch("app.main.run_in_threadpool", side_effect=boom),
             patch("app.main._resolve_actor_user_id", return_value=("u1", None)),
+            patch("app.main._resolve_actor_user", return_value=({"id": "u1", "is_anonymous": False}, None)),
         ]:
             p.start()
             self.addCleanup(p.stop)

@@ -151,6 +151,7 @@ class BlueprintGenerateRequest(BaseModel):
     level: str | None = None
     material_count: int = Field(ge=1)
     material_text: str = Field(min_length=1)
+    sandbox_id: str | None = None
     timeout_ms: int | None = None
 
 
@@ -168,6 +169,7 @@ class QuizGenerateRequest(BaseModel):
     instructions: str = Field(min_length=1)
     blueprint_context: str
     material_context: str
+    sandbox_id: str | None = None
     timeout_ms: int | None = None
 
 
@@ -192,6 +194,7 @@ class FlashcardsGenerateRequest(BaseModel):
     instructions: str = Field(min_length=1)
     blueprint_context: str
     material_context: str
+    sandbox_id: str | None = None
     timeout_ms: int | None = None
 
 
@@ -222,6 +225,7 @@ class ChatGenerateRequest(BaseModel):
     transcript: list[ChatTranscriptTurn] = Field(default_factory=list)
     blueprint_context: str
     material_context: str
+    sandbox_id: str | None = None
     compacted_memory_context: str | None = None
     assignment_instructions: str | None = None
     purpose: str | None = None
