@@ -235,6 +235,39 @@ def _safe_json_dict(response: httpx.Response) -> dict[str, Any]:
     return {}
 
 
+async def _guest_sandbox_belongs_to_actor(
+    settings: Settings,
+    actor_user_id: str,
+    sandbox_id: str,
+) -> bool:
+    supabase_url = settings.supabase_url
+    service_role_key = settings.supabase_service_role_key
+    if not supabase_url or not service_role_key:
+        return False
+
+    sandbox_url = (
+        f"{supabase_url.rstrip('/')}/rest/v1/guest_sandboxes"
+        f"?select=id&user_id=eq.{actor_user_id}&id=eq.{sandbox_id}&status=eq.active&limit=1"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=USER_TOKEN_VERIFY_TIMEOUT_SECONDS, trust_env=False) as client:
+            response = await client.get(
+                sandbox_url,
+                headers={
+                    "Authorization": f"Bearer {service_role_key}",
+                    "apikey": service_role_key,
+                },
+            )
+    except httpx.HTTPError:
+        return False
+
+    if response.status_code >= 400:
+        return False
+
+    payload = response.json()
+    return isinstance(payload, list) and len(payload) > 0
+
+
 def _bind_actor_user_id(
     request: Request,
     payload: UserBoundPayload,
@@ -281,6 +314,23 @@ async def _enforce_guest_ai_guards(
             status_code=400,
             message="Guest requests must include sandbox_id.",
             code="guest_sandbox_required",
+        )
+
+    actor_user_id = actor.get("id") if isinstance(actor, dict) else None
+    if not isinstance(actor_user_id, str) or not actor_user_id.strip():
+        return None, _error_response(
+            request,
+            status_code=401,
+            message="Invalid user token.",
+            code="invalid_user_token",
+        )
+
+    if not await _guest_sandbox_belongs_to_actor(settings, actor_user_id.strip(), sandbox_id):
+        return None, _error_response(
+            request,
+            status_code=403,
+            message="Guest sandbox does not belong to the authenticated user.",
+            code="guest_sandbox_forbidden",
         )
 
     allowed, reason = check_guest_ai_access(settings, sandbox_id, feature)
