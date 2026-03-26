@@ -1044,7 +1044,15 @@ $$;
 
 grant execute on function public.clone_guest_sandbox(uuid, uuid) to authenticated;
 
-create or replace function public.cleanup_expired_guest_sandboxes()
+-- Cleanup contract verification target:
+-- 1. Function accepts a batch size argument.
+-- 2. Function processes at most that many expired/discarded sandboxes.
+-- 3. Re-running cleanup after partial success is safe.
+-- 4. Middleware remains responsible for rejecting expired/inactive sessions.
+-- 5. Cleanup is bounded hygiene; it does not mark active rows as expired.
+create or replace function public.cleanup_expired_guest_sandboxes(
+  p_batch_size integer default 25
+)
 returns integer
 language plpgsql
 security definer
@@ -1053,29 +1061,52 @@ as $$
 declare
   v_row record;
   v_count integer := 0;
+  v_limit integer := greatest(1, least(coalesce(p_batch_size, 25), 100));
+  v_rows_affected integer := 0;
+  v_did_work boolean;
 begin
   for v_row in
     select gs.id, gs.user_id
     from public.guest_sandboxes gs
-    where gs.status = 'active'
-      and (
-        gs.expires_at <= now()
-        or gs.last_seen_at <= now() - interval '1 hour'
-      )
+    where gs.status in ('expired', 'discarded')
+    order by gs.expires_at asc nulls first, gs.last_seen_at asc, gs.created_at asc
+    limit v_limit
+    for update skip locked
   loop
-    update public.guest_sandboxes
-       set status = 'expired',
-           updated_at = now()
-     where id = v_row.id;
+    v_did_work := false;
 
     delete from public.classes where sandbox_id = v_row.id;
+    get diagnostics v_rows_affected = row_count;
+    if v_rows_affected > 0 then
+      v_did_work := true;
+    end if;
+
     delete from auth.users where id = v_row.user_id and coalesce(is_anonymous, false);
-    v_count := v_count + 1;
+    get diagnostics v_rows_affected = row_count;
+    if v_rows_affected > 0 then
+      v_did_work := true;
+    end if;
+
+    delete from public.guest_sandboxes
+     where id = v_row.id
+       and status in ('expired', 'discarded');
+    get diagnostics v_rows_affected = row_count;
+    if v_rows_affected > 0 then
+      v_did_work := true;
+    end if;
+
+    if v_did_work then
+      v_count := v_count + 1;
+    end if;
   end loop;
 
   return v_count;
 end;
 $$;
+
+-- Expected manual verification:
+-- select public.cleanup_expired_guest_sandboxes(1);
+-- Should return at most 1 and leave additional expired sandboxes for subsequent runs.
 
 create or replace function public.allow_guest_sandbox_access(
   target_sandbox_id uuid

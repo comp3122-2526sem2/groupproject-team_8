@@ -376,7 +376,7 @@ Append to the same migration file:
 -- 5. Sandbox cleanup function
 -- ============================================================
 
-create or replace function public.cleanup_expired_guest_sandboxes()
+create or replace function public.cleanup_expired_guest_sandboxes(p_batch_size int default 25)
 returns int
 language plpgsql security definer
 set search_path = pg_catalog, public
@@ -386,18 +386,20 @@ declare
   v_sandbox record;
 begin
   for v_sandbox in
-    select id, user_id from public.guest_sandboxes
-    where status = 'active'
-      and (expires_at < now() or last_seen_at < now() - interval '1 hour')
+    select id, user_id
+    from public.guest_sandboxes
+    where status in ('expired', 'discarded')
+    order by expires_at asc nulls last, created_at asc
+    limit greatest(coalesce(p_batch_size, 25), 1)
   loop
-    -- Mark sandbox as expired
-    update public.guest_sandboxes set status = 'expired' where id = v_sandbox.id;
-
-    -- Delete all sandbox-scoped data (cascade handles most FKs)
+    -- Physically remove sandbox-scoped class graph (cascades child rows)
     delete from public.classes where sandbox_id = v_sandbox.id;
 
-    -- Delete the anonymous auth user (cascades to guest_sandboxes row)
+    -- Remove anonymous auth user + guest_sandboxes row when present
     delete from auth.users where id = v_sandbox.user_id and is_anonymous = true;
+
+    -- Fallback: if auth user is already gone, delete tracking row directly
+    delete from public.guest_sandboxes where id = v_sandbox.id;
 
     v_count := v_count + 1;
   end loop;
@@ -696,14 +698,17 @@ $$;
 -- for any policy that needs explicit exclusion.
 
 -- ============================================================
--- 8. Schedule cleanup job via pg_cron (every 15 minutes)
+-- 8. Cleanup scheduling note (Supabase-native hygiene job)
 -- ============================================================
-
-select cron.schedule(
-  'cleanup-expired-guest-sandboxes',
-  '*/15 * * * *',
-  $$select public.cleanup_expired_guest_sandboxes()$$
-);
+-- Cleanup execution should be scheduled with Supabase-native scheduling as a
+-- bounded hygiene task. Middleware request-time checks remain authoritative for
+-- rejecting expired/inactive guest sessions.
+--
+-- Do not rely on frequent Vercel cron for guest lifecycle correctness.
+-- Do not make SQL cleanup responsible for expiring active rows.
+--
+-- Example operator check:
+-- select public.cleanup_expired_guest_sandboxes(25);
 ```
 
 - [ ] **Step 6: Apply migration and verify**
@@ -2276,7 +2281,7 @@ git commit -m "test: finalize guest mode verification pass"
 
 - Enable Supabase Anonymous Auth in the Supabase Dashboard (Authentication → Settings → Allow anonymous sign-ins)
 - Start with feature gated by checking `NEXT_PUBLIC_GUEST_MODE_ENABLED` env var on the homepage CTA
-- Set up `pg_cron` job to call `cleanup_expired_guest_sandboxes()` every 15 minutes
+- Configure Supabase-native scheduling (or another bounded hygiene trigger) to run `cleanup_expired_guest_sandboxes(<batch_size>)`; frequency is operational, not a correctness requirement
 - Monitor `guest_sandboxes` table size and AI usage counters
 - Observe rate-limit hit rates before adjusting thresholds
 
