@@ -113,30 +113,13 @@ describe("generateGroundedChatResponse", () => {
       latencyMs: 15,
     });
 
-    createServerSupabaseClient.mockResolvedValue({
-      auth: {
-        getSession: vi.fn(async () => ({
-          data: { session: { access_token: "session-token" } },
-        })),
-      },
-      from: vi.fn(() => ({
-        insert: vi.fn(async () => ({ error: null })),
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            eq: vi.fn(async () => ({
-              data: { id: "sandbox-1" },
-            })),
-          })),
-        })),
-      })),
-    });
-
     await generateGroundedChatResponse({
       classId: "class-1",
       classTitle: "Physics",
       userId: "student-1",
       userMessage: "Can we review kinematics?",
       transcript: [],
+      sandboxId: "sandbox-1",
       purpose: "student_chat_open_v2",
     });
 

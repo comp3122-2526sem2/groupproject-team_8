@@ -144,6 +144,7 @@ export async function generateGroundedChatResponse(input: {
   userId: string;
   userMessage: string;
   transcript: ChatTurn[];
+  sandboxId?: string | null;
   compactedMemoryContext?: string;
   sessionId?: string;
   assignmentInstructions?: string | null;
@@ -178,6 +179,7 @@ export async function generateGroundedChatResponse(input: {
       classId: input.classId,
       userId: input.userId,
       accessToken,
+      sandboxId: input.sandboxId ?? null,
       classTitle: input.classTitle,
       userMessage: input.userMessage,
       transcript: input.transcript,
