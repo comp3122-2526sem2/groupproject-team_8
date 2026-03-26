@@ -87,6 +87,16 @@ export async function middleware(request: NextRequest) {
       new Date(sandbox.last_seen_at).getTime() <= Date.now() - 60 * 60 * 1000;
 
     if (isExpired) {
+      if (sandbox) {
+        await supabase
+          .from("guest_sandboxes")
+          .update({
+            status: "expired",
+          })
+          .eq("user_id", guestUser.id)
+          .eq("status", "active");
+      }
+
       await supabase.auth.signOut();
       return NextResponse.redirect(new URL("/?guest=expired", request.url));
     }

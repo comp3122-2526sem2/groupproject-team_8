@@ -11,20 +11,41 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-const supabaseAuth = {
-  getUser: vi.fn(),
-  resetPasswordForEmail: vi.fn(),
-  signInWithPassword: vi.fn(),
-  signOut: vi.fn(),
-  signUp: vi.fn(),
-  updateUser: vi.fn(),
-};
+const {
+  supabaseAuth,
+  getAuthContextMock,
+  discardGuestSandboxMock,
+} = vi.hoisted(() => ({
+  supabaseAuth: {
+    getSession: vi.fn(),
+    getUser: vi.fn(),
+    resetPasswordForEmail: vi.fn(),
+    signInWithPassword: vi.fn(),
+    signOut: vi.fn(),
+    signUp: vi.fn(),
+    updateUser: vi.fn(),
+  },
+  getAuthContextMock: vi.fn(),
+  discardGuestSandboxMock: vi.fn(),
+}));
 
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: () => ({
     auth: supabaseAuth,
   }),
 }));
+
+vi.mock("@/lib/auth/session", () => ({
+  getAuthContext: getAuthContextMock,
+}));
+
+vi.mock("@/lib/guest/sandbox", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/guest/sandbox")>("@/lib/guest/sandbox");
+  return {
+    ...actual,
+    discardGuestSandbox: discardGuestSandboxMock,
+  };
+});
 
 async function expectRedirect(action: () => Promise<void> | void, path: string) {
   try {
@@ -45,6 +66,14 @@ describe("auth actions", () => {
     delete process.env.NEXT_PUBLIC_SITE_URL;
     delete process.env.NEXT_PUBLIC_VERCEL_URL;
     delete process.env.VERCEL_URL;
+    supabaseAuth.getSession.mockResolvedValue({ data: { session: null } });
+    getAuthContextMock.mockResolvedValue({
+      isGuest: false,
+      sandboxId: null,
+      supabase: { auth: supabaseAuth },
+    });
+    discardGuestSandboxMock.mockResolvedValue({ ok: true });
+    supabaseAuth.signOut.mockResolvedValue({ error: null });
   });
 
   it("redirects to login with error on failed sign in", async () => {
@@ -105,6 +134,52 @@ describe("auth actions", () => {
       () => signUp(formData),
       "/register?error=We%20couldn't%20create%20an%20account%20with%20that%20email.%20Try%20signing%20in%20or%20resetting%20your%20password.",
     );
+  });
+
+  it("fails closed when guest sandbox discard fails during sign up", async () => {
+    getAuthContextMock.mockResolvedValue({
+      isGuest: true,
+      sandboxId: "sandbox-1",
+      supabase: { auth: supabaseAuth },
+    });
+    discardGuestSandboxMock.mockResolvedValueOnce({ ok: false, error: "discard failed" });
+
+    const formData = new FormData();
+    formData.set("email", "test@example.com");
+    formData.set("password", "goodpass1");
+    formData.set("account_type", "teacher");
+
+    await expectRedirect(
+      () => signUp(formData),
+      "/register?error=discard%20failed",
+    );
+
+    expect(discardGuestSandboxMock).toHaveBeenCalledWith("sandbox-1");
+    expect(supabaseAuth.signOut).not.toHaveBeenCalled();
+    expect(supabaseAuth.signUp).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when guest sign out fails after sandbox discard", async () => {
+    getAuthContextMock.mockResolvedValue({
+      isGuest: true,
+      sandboxId: "sandbox-1",
+      supabase: { auth: supabaseAuth },
+    });
+    discardGuestSandboxMock.mockResolvedValueOnce({ ok: true });
+    supabaseAuth.signOut.mockResolvedValueOnce({ error: { message: "sign out failed" } });
+
+    const formData = new FormData();
+    formData.set("email", "test@example.com");
+    formData.set("password", "goodpass1");
+    formData.set("account_type", "teacher");
+
+    await expectRedirect(
+      () => signUp(formData),
+      "/register?error=sign%20out%20failed",
+    );
+
+    expect(discardGuestSandboxMock).toHaveBeenCalledWith("sandbox-1");
+    expect(supabaseAuth.signUp).not.toHaveBeenCalled();
   });
 
   it("redirects to login with verify on successful sign up", async () => {

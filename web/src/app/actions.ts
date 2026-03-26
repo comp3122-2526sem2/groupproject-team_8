@@ -46,8 +46,9 @@ function redirectToAuthPage(path: string, message?: string) {
     redirect(path);
   }
 
+  const resolvedMessage = message ?? "Unexpected authentication error";
   const url = new URL(path, "http://localhost");
-  url.searchParams.set("error", message);
+  url.searchParams.set("error", resolvedMessage);
   redirect(`${url.pathname}?${url.searchParams.toString()}`);
 }
 
@@ -99,8 +100,15 @@ export async function signUp(formData: FormData) {
 
   const existingContext = await getAuthContext();
   if (existingContext.isGuest && existingContext.sandboxId) {
-    await discardGuestSandbox(existingContext.sandboxId);
-    await existingContext.supabase.auth.signOut();
+    const discarded = await discardGuestSandbox(existingContext.sandboxId);
+    if (!discarded.ok) {
+      redirect(`/register?error=${encodeURIComponent(discarded.error ?? "Unable to discard guest sandbox")}`);
+    }
+
+    const signOutResult = await existingContext.supabase.auth.signOut();
+    if (signOutResult?.error) {
+      redirect(`/register?error=${encodeURIComponent(signOutResult.error.message)}`);
+    }
   }
 
   const supabase = await createServerSupabaseClient();

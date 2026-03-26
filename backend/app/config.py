@@ -30,7 +30,11 @@ class Settings:
     ai_request_timeout_ms: int
     ai_embedding_timeout_ms: int
     guest_max_concurrent_ai_requests: int
-    guest_max_ai_requests_per_feature: int
+    guest_chat_limit: int
+    guest_quiz_limit: int
+    guest_flashcards_limit: int
+    guest_blueprint_limit: int
+    guest_embedding_limit: int
     openrouter_api_key: str | None
     openrouter_model: str | None
     openrouter_embedding_model: str | None
@@ -63,8 +67,12 @@ def get_settings() -> Settings:
             "AI_PROVIDER_DEFAULT", "openrouter").strip().lower(),
         ai_request_timeout_ms=_get_int("AI_REQUEST_TIMEOUT_MS", 30000),
         ai_embedding_timeout_ms=_get_int("AI_EMBEDDING_TIMEOUT_MS", 30000),
-        guest_max_concurrent_ai_requests=_get_int("GUEST_MAX_CONCURRENT_AI_REQUESTS", 1),
-        guest_max_ai_requests_per_feature=_get_int("GUEST_MAX_AI_REQUESTS_PER_FEATURE", 25),
+        guest_max_concurrent_ai_requests=_get_int("GUEST_MAX_CONCURRENT_AI_REQUESTS", 20),
+        guest_chat_limit=_get_int("GUEST_CHAT_LIMIT", 50),
+        guest_quiz_limit=_get_int("GUEST_QUIZ_LIMIT", 5),
+        guest_flashcards_limit=_get_int("GUEST_FLASHCARDS_LIMIT", 10),
+        guest_blueprint_limit=_get_int("GUEST_BLUEPRINT_LIMIT", 3),
+        guest_embedding_limit=_get_int("GUEST_EMBEDDING_LIMIT", 0),
         openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
         openrouter_model=os.getenv("OPENROUTER_MODEL"),
         openrouter_embedding_model=os.getenv("OPENROUTER_EMBEDDING_MODEL"),

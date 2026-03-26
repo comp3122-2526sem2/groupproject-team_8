@@ -8,11 +8,13 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.guest_rate_limit import check_guest_ai_access, increment_guest_ai_usage, release_guest_ai_slot
 from tests.helpers import make_settings
 
 
 class GuestRateLimitTests(unittest.TestCase):
     def setUp(self) -> None:
+        release_guest_ai_slot("sandbox-1")
         self.client = TestClient(app)
         self.settings = make_settings(
             python_backend_api_key="test-key",
@@ -45,6 +47,39 @@ class GuestRateLimitTests(unittest.TestCase):
             "material_context": "materials",
             "sandbox_id": "sandbox-1",
         }
+
+    def test_per_feature_limits_match_guest_mode_spec(self) -> None:
+        self.assertEqual(check_guest_ai_access(self.settings, "sandbox-1", "chat"), (True, None))
+        for _ in range(50):
+            increment_guest_ai_usage("sandbox-1", "chat")
+        self.assertEqual(check_guest_ai_access(self.settings, "sandbox-1", "chat"), (False, "Guest chat limit reached."))
+
+        self.assertEqual(check_guest_ai_access(self.settings, "sandbox-2", "quiz"), (True, None))
+        for _ in range(5):
+            increment_guest_ai_usage("sandbox-2", "quiz")
+        self.assertEqual(check_guest_ai_access(self.settings, "sandbox-2", "quiz"), (False, "Guest quiz limit reached."))
+
+        self.assertEqual(check_guest_ai_access(self.settings, "sandbox-3", "flashcards"), (True, None))
+        for _ in range(10):
+            increment_guest_ai_usage("sandbox-3", "flashcards")
+        self.assertEqual(
+            check_guest_ai_access(self.settings, "sandbox-3", "flashcards"),
+            (False, "Guest flashcards limit reached."),
+        )
+
+        self.assertEqual(check_guest_ai_access(self.settings, "sandbox-4", "blueprint"), (True, None))
+        for _ in range(3):
+            increment_guest_ai_usage("sandbox-4", "blueprint")
+        self.assertEqual(
+            check_guest_ai_access(self.settings, "sandbox-4", "blueprint"),
+            (False, "Guest blueprint limit reached."),
+        )
+
+    def test_embedding_is_always_blocked_for_guest_mode(self) -> None:
+        self.assertEqual(
+            check_guest_ai_access(self.settings, "sandbox-embed", "embedding"),
+            (False, "Guest embedding limit reached."),
+        )
 
     def test_guest_chat_requires_sandbox_id(self) -> None:
         payload = self._chat_payload()

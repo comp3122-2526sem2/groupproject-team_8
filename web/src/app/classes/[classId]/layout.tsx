@@ -14,7 +14,13 @@ export default async function ClassRouteLayout({
   const context = await requireGuestOrVerifiedUser();
 
   if (context.isGuest && context.sandboxId) {
-    await touchGuestSandbox(context.sandboxId);
+    const touchResult = await touchGuestSandbox(context.sandboxId);
+    if (!touchResult.ok) {
+      console.error("Failed to refresh guest sandbox activity", {
+        sandboxId: context.sandboxId,
+        error: touchResult.error,
+      });
+    }
   }
 
   return (

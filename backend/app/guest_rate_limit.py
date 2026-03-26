@@ -10,12 +10,29 @@ _concurrent_slots: dict[str, int] = defaultdict(int)
 _state_lock = Lock()
 
 
+def _feature_limit(settings: Settings, feature: str) -> int:
+    if feature == "chat":
+        return settings.guest_chat_limit
+    if feature == "quiz":
+        return settings.guest_quiz_limit
+    if feature == "flashcards":
+        return settings.guest_flashcards_limit
+    if feature == "blueprint":
+        return settings.guest_blueprint_limit
+    if feature == "embedding":
+        return settings.guest_embedding_limit
+    return 0
+
+
 def check_guest_ai_access(
     settings: Settings,
     sandbox_id: str,
     feature: str,
 ) -> tuple[bool, str | None]:
-    limit = settings.guest_max_ai_requests_per_feature
+    limit = _feature_limit(settings, feature)
+    if limit <= 0:
+        return False, f"Guest {feature} limit reached."
+
     with _state_lock:
         used = _feature_usage.get(sandbox_id, {}).get(feature, 0)
     if used >= limit:

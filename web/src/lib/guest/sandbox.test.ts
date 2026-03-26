@@ -5,10 +5,17 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { provisionGuestSandbox, resetGuestSandbox, switchGuestRole } from "./sandbox";
+import {
+  provisionGuestSandbox,
+  resetGuestSandbox,
+  switchGuestRole,
+  touchGuestSandbox,
+} from "./sandbox";
 
 function makeMutableBuilder(result: { data?: unknown; error?: { message: string } | null }) {
   return {
+    data: result.data ?? null,
+    error: result.error ?? null,
     select: vi.fn().mockReturnThis(),
     insert: vi.fn().mockReturnThis(),
     update: vi.fn().mockReturnThis(),
@@ -161,6 +168,27 @@ describe("switchGuestRole", () => {
       }),
     );
     expect(result).toEqual({ ok: true });
+  });
+});
+
+describe("touchGuestSandbox", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns an error when the guest heartbeat update fails", async () => {
+    mockSupabase({
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === "guest_sandboxes") {
+          return makeMutableBuilder({ data: null, error: { message: "write failed" } });
+        }
+        return makeMutableBuilder({ data: null });
+      }),
+    });
+
+    const result = await touchGuestSandbox("sandbox-1");
+
+    expect(result).toEqual({ ok: false, error: "write failed" });
   });
 });
 

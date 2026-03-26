@@ -109,15 +109,23 @@ export async function switchGuestRole(
   return { ok: true };
 }
 
-export async function touchGuestSandbox(sandboxId: string): Promise<void> {
+export async function touchGuestSandbox(
+  sandboxId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const supabase = await createServerSupabaseClient();
-  await supabase
+  const { error } = await supabase
     .from("guest_sandboxes")
     .update({
       last_seen_at: new Date().toISOString(),
     })
     .eq("id", sandboxId)
     .eq("status", "active");
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true };
 }
 
 export async function discardGuestSandbox(
