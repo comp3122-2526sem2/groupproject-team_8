@@ -139,6 +139,7 @@ class ChatWorkspaceMessageSendRequest(BaseModel):
     user_id: str = Field(min_length=1)
     session_id: str = Field(min_length=1)
     message: str = Field(min_length=1)
+    sandbox_id: str | None = None
     timeout_ms: int | None = None
     max_tokens: int | None = Field(default=None, ge=1, le=16000)
     tool_mode: Literal["off", "plan", "auto"] = "off"

@@ -4,7 +4,10 @@ import { assertGuestSafeSignedUrl, isGuestSafeStoragePath } from "./storage";
 describe("isGuestSafeStoragePath", () => {
   it("allows sandbox-scoped guest storage paths", () => {
     expect(
-      isGuestSafeStoragePath("classes/class-1/sandboxes/sandbox-1/notes.pdf", "sandbox-1"),
+      isGuestSafeStoragePath(
+        "classes/class-1/sandboxes/sandbox-1/material-1/notes.pdf",
+        "sandbox-1",
+      ),
     ).toBe(true);
   });
 
@@ -14,14 +17,17 @@ describe("isGuestSafeStoragePath", () => {
 
   it("rejects paths from a different sandbox", () => {
     expect(
-      isGuestSafeStoragePath("classes/class-1/sandboxes/sandbox-2/notes.pdf", "sandbox-1"),
+      isGuestSafeStoragePath(
+        "classes/class-1/sandboxes/sandbox-2/material-1/notes.pdf",
+        "sandbox-1",
+      ),
     ).toBe(false);
   });
 
   it("rejects traversal-like segments", () => {
     expect(
       isGuestSafeStoragePath(
-        "classes/class-1/sandboxes/sandbox-1/../sandbox-2/notes.pdf",
+        "classes/class-1/sandboxes/sandbox-1/../sandbox-2/material-1/notes.pdf",
         "sandbox-1",
       ),
     ).toBe(false);
@@ -31,7 +37,10 @@ describe("isGuestSafeStoragePath", () => {
 describe("assertGuestSafeSignedUrl", () => {
   it("throws for unsafe guest storage paths", () => {
     expect(() =>
-      assertGuestSafeSignedUrl("classes/class-1/sandboxes/sandbox-2/notes.pdf", "sandbox-1"),
+      assertGuestSafeSignedUrl(
+        "classes/class-1/sandboxes/sandbox-2/material-1/notes.pdf",
+        "sandbox-1",
+      ),
     ).toThrow("not accessible in guest mode");
   });
 });

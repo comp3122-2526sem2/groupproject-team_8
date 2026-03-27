@@ -136,12 +136,38 @@ describe("auth actions", () => {
     );
   });
 
-  it("fails closed when guest sandbox discard fails during sign up", async () => {
+  it("preserves the guest sandbox when sign up fails", async () => {
     getAuthContextMock.mockResolvedValue({
       isGuest: true,
       sandboxId: "sandbox-1",
       supabase: { auth: supabaseAuth },
     });
+    supabaseAuth.signUp.mockResolvedValueOnce({
+      error: { message: "Unexpected auth failure" },
+    });
+
+    const formData = new FormData();
+    formData.set("email", "test@example.com");
+    formData.set("password", "goodpass1");
+    formData.set("account_type", "teacher");
+
+    await expectRedirect(
+      () => signUp(formData),
+      "/register?error=Unexpected%20auth%20failure",
+    );
+
+    expect(discardGuestSandboxMock).not.toHaveBeenCalled();
+    expect(supabaseAuth.signOut).not.toHaveBeenCalled();
+    expect(supabaseAuth.signUp).toHaveBeenCalled();
+  });
+
+  it("redirects to login with verify and cleanup error when guest sandbox discard fails after sign up", async () => {
+    getAuthContextMock.mockResolvedValue({
+      isGuest: true,
+      sandboxId: "sandbox-1",
+      supabase: { auth: supabaseAuth },
+    });
+    supabaseAuth.signUp.mockResolvedValueOnce({ error: null });
     discardGuestSandboxMock.mockResolvedValueOnce({ ok: false, error: "discard failed" });
 
     const formData = new FormData();
@@ -151,20 +177,21 @@ describe("auth actions", () => {
 
     await expectRedirect(
       () => signUp(formData),
-      "/register?error=discard%20failed",
+      "/login?verify=1&error=discard%20failed",
     );
 
     expect(discardGuestSandboxMock).toHaveBeenCalledWith("sandbox-1");
-    expect(supabaseAuth.signOut).not.toHaveBeenCalled();
-    expect(supabaseAuth.signUp).not.toHaveBeenCalled();
+    expect(supabaseAuth.signUp).toHaveBeenCalled();
+    expect(supabaseAuth.signOut).toHaveBeenCalled();
   });
 
-  it("fails closed when guest sign out fails after sandbox discard", async () => {
+  it("redirects to login with verify and cleanup error when guest sign out fails after sign up", async () => {
     getAuthContextMock.mockResolvedValue({
       isGuest: true,
       sandboxId: "sandbox-1",
       supabase: { auth: supabaseAuth },
     });
+    supabaseAuth.signUp.mockResolvedValueOnce({ error: null });
     discardGuestSandboxMock.mockResolvedValueOnce({ ok: true });
     supabaseAuth.signOut.mockResolvedValueOnce({ error: { message: "sign out failed" } });
 
@@ -175,11 +202,11 @@ describe("auth actions", () => {
 
     await expectRedirect(
       () => signUp(formData),
-      "/register?error=sign%20out%20failed",
+      "/login?verify=1&error=sign%20out%20failed",
     );
 
     expect(discardGuestSandboxMock).toHaveBeenCalledWith("sandbox-1");
-    expect(supabaseAuth.signUp).not.toHaveBeenCalled();
+    expect(supabaseAuth.signUp).toHaveBeenCalled();
   });
 
   it("redirects to login with verify on successful sign up", async () => {

@@ -148,6 +148,15 @@ class GuestRateLimitRouteTests(unittest.TestCase):
             "sandbox_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
         }
 
+    def _workspace_payload(self) -> dict[str, object]:
+        return {
+            "user_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "class_id": "class-1",
+            "session_id": "session-1",
+            "message": "Explain osmosis",
+            "sandbox_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        }
+
     def test_guest_chat_requires_sandbox_id(self) -> None:
         payload = self._chat_payload()
         payload.pop("sandbox_id")
@@ -191,6 +200,23 @@ class GuestRateLimitRouteTests(unittest.TestCase):
         ):
             response = self.client.post(
                 "/v1/llm/embeddings",
+                headers=self._guest_headers(),
+                json=payload,
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"]["code"], "guest_sandbox_required")
+
+    def test_guest_workspace_chat_requires_sandbox_id(self) -> None:
+        payload = self._workspace_payload()
+        payload.pop("sandbox_id")
+
+        with (
+            patch("app.main.get_settings", return_value=self.settings),
+            patch("app.main._resolve_actor_user", return_value=(self._guest_actor(), None)),
+        ):
+            response = self.client.post(
+                "/v1/chat/workspace/messages/send",
                 headers=self._guest_headers(),
                 json=payload,
             )
@@ -364,6 +390,40 @@ class GuestRateLimitRouteTests(unittest.TestCase):
             self.settings,
             "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
             "embedding",
+        )
+        release_mock.assert_awaited_once_with(
+            self.settings,
+            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        )
+
+    def test_guest_workspace_chat_increments_usage_and_releases_slot_after_success(self) -> None:
+        release_mock = AsyncMock()
+        increment_mock = AsyncMock()
+
+        with (
+            patch("app.main.get_settings", return_value=self.settings),
+            patch("app.main._resolve_actor_user", return_value=(self._guest_actor(), None)),
+            patch(
+                "app.main._load_guest_sandbox_for_actor",
+                return_value=(_guest_sandbox_row(), False),
+            ),
+            patch("app.main.check_guest_ai_access", return_value=(True, None)),
+            patch("app.main.acquire_guest_ai_slot", new=AsyncMock(return_value=True)),
+            patch("app.main.release_guest_ai_slot", new=release_mock),
+            patch("app.main.increment_guest_ai_usage", new=increment_mock),
+            patch("app.main.run_in_threadpool", return_value={"response": "ok"}),
+        ):
+            response = self.client.post(
+                "/v1/chat/workspace/messages/send",
+                headers=self._guest_headers(),
+                json=self._workspace_payload(),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        increment_mock.assert_awaited_once_with(
+            self.settings,
+            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "chat",
         )
         release_mock.assert_awaited_once_with(
             self.settings,

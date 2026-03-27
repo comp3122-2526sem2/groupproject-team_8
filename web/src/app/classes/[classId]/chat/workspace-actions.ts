@@ -61,7 +61,7 @@ function toFriendlyPythonWorkspaceError(error: unknown) {
 }
 
 async function resolveAccess(classId: string) {
-  const { supabase, user, accessToken, authError } = await requireAuthenticatedUser();
+  const { supabase, user, accessToken, authError, sandboxId } = await requireAuthenticatedUser();
 
   if (!user) {
     return {
@@ -89,6 +89,7 @@ async function resolveAccess(classId: string) {
     supabase,
     user,
     accessToken,
+    sandboxId,
     role,
   };
 }
@@ -270,6 +271,7 @@ export async function sendClassChatMessage(
       accessToken: access.accessToken ?? "",
       sessionId,
       message,
+      sandboxId: access.sandboxId,
     });
     return { ok: true, data };
   } catch (error) {

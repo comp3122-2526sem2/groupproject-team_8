@@ -484,7 +484,7 @@ async function uploadMaterialMutationInternal(
   const safeName = sanitizeFilename(file.name);
   const storagePath =
     isGuest && sandboxId
-      ? buildGuestStoragePath(classId, sandboxId, safeName)
+      ? buildGuestStoragePath(classId, sandboxId, materialId, safeName)
       : `classes/${classId}/${materialId}/${safeName}`;
   const buffer = Buffer.from(await file.arrayBuffer());
   const baseMetadata = {

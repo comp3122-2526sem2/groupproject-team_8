@@ -52,6 +52,7 @@ function makeAuthUser(userId: string, isTeacher = false) {
     user: { id: userId },
     profile: { id: userId, account_type: isTeacher ? "teacher" : "student" },
     isEmailVerified: true,
+    sandboxId: null,
     authError: null,
     accessToken: "session-token",
   } as never);
@@ -259,6 +260,87 @@ describe("workspace chat actions", () => {
       accessToken: "session-token",
       sessionId: "session-1",
       message: "How do I start this proof?",
+      sandboxId: null,
+    });
+  });
+
+  it("passes sandboxId for guest workspace messages", async () => {
+    vi.mocked(sendWorkspaceMessageViaPython).mockResolvedValue({
+      response: {
+        safety: "ok",
+        answer: "Response",
+        citations: [],
+      },
+      userMessage: {
+        id: "u1",
+        sessionId: "session-1",
+        classId: "class-1",
+        authorUserId: "guest-1",
+        authorKind: "student",
+        content: "How do I start this proof?",
+        citations: [],
+        safety: null,
+        provider: null,
+        model: null,
+        promptTokens: null,
+        completionTokens: null,
+        totalTokens: null,
+        latencyMs: null,
+        createdAt: "2026-02-10T12:03:00.000Z",
+      },
+      assistantMessage: {
+        id: "a1",
+        sessionId: "session-1",
+        classId: "class-1",
+        authorUserId: null,
+        authorKind: "assistant",
+        content: "Response",
+        citations: [],
+        safety: "ok",
+        provider: "openrouter",
+        model: "model-a",
+        promptTokens: 11,
+        completionTokens: 22,
+        totalTokens: 33,
+        latencyMs: 444,
+        createdAt: "2026-02-10T12:03:00.000Z",
+      },
+      contextMeta: {
+        compacted: false,
+        compactedAt: null,
+        reason: null,
+      },
+    });
+    vi.mocked(requireAuthenticatedUser).mockResolvedValue({
+      supabase: { from: vi.fn() },
+      user: { id: "guest-1" },
+      profile: { id: "guest-1", account_type: "student" },
+      isEmailVerified: true,
+      sandboxId: "sandbox-1",
+      authError: null,
+      accessToken: "session-token",
+    } as never);
+    vi.mocked(getClassAccess).mockResolvedValue({
+      found: true,
+      isTeacher: false,
+      isMember: true,
+      classTitle: "Calculus",
+      classOwnerId: "teacher-1",
+    });
+
+    const formData = new FormData();
+    formData.set("message", "How do I start this proof?");
+
+    const result = await sendClassChatMessage("class-1", "session-1", formData);
+
+    expect(result.ok).toBe(true);
+    expect(sendWorkspaceMessageViaPython).toHaveBeenCalledWith({
+      classId: "class-1",
+      userId: "guest-1",
+      accessToken: "session-token",
+      sessionId: "session-1",
+      message: "How do I start this proof?",
+      sandboxId: "sandbox-1",
     });
   });
 

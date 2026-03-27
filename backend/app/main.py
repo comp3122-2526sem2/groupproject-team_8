@@ -1145,8 +1145,19 @@ async def send_chat_workspace_message_route(request: Request, payload: ChatWorks
         return payload_error
     assert bound_payload is not None
 
+    guest_sandbox_id, guest_error = await _enforce_guest_ai_guards(
+        request,
+        settings,
+        bound_payload,
+        "chat",
+    )
+    if guest_error:
+        return guest_error
+
     try:
         result = await run_in_threadpool(send_message, settings, bound_payload)
+        if guest_sandbox_id:
+            await increment_guest_ai_usage(settings, guest_sandbox_id, "chat")
         return ApiEnvelope(
             ok=True,
             data=result,
@@ -1171,6 +1182,15 @@ async def send_chat_workspace_message_route(request: Request, payload: ChatWorks
                 meta={"request_id": request.state.request_id},
             ).model_dump(),
         )
+    finally:
+        if guest_sandbox_id:
+            try:
+                await release_guest_ai_slot(settings, guest_sandbox_id)
+            except RuntimeError:
+                logger.exception(
+                    "Failed to release guest concurrency slot after workspace chat request for sandbox_id=%s",
+                    guest_sandbox_id,
+                )
 
 
 def _parse_bearer_token(header: str | None) -> str | None:

@@ -25,18 +25,27 @@ function isMaybeSingleNoRowsError(error: { code?: string; message?: string } | n
   return error?.code === "PGRST116";
 }
 
+function isAnonymousUser(user: {
+  is_anonymous?: boolean;
+  app_metadata?: { provider?: string | null } | null;
+} | null | undefined) {
+  return user?.is_anonymous === true || user?.app_metadata?.provider === "anonymous";
+}
+
 export async function provisionGuestSandbox(): Promise<GuestSandboxResult> {
   const supabase = await createServerSupabaseClient();
 
   const {
     data: { session: existingSession },
   } = await supabase.auth.getSession();
+  const existingUser = existingSession?.user ?? null;
+  const existingUserIsAnonymous = isAnonymousUser(existingUser);
 
-  if (existingSession?.user) {
+  if (existingUser) {
     const { data: existingSandbox, error: existingSandboxError } = await supabase
       .from("guest_sandboxes")
       .select("id,class_id,status,guest_role")
-      .eq("user_id", existingSession.user.id)
+      .eq("user_id", existingUser.id)
       .eq("status", "active")
       .maybeSingle<ActiveSandboxRow>();
 
@@ -54,27 +63,71 @@ export async function provisionGuestSandbox(): Promise<GuestSandboxResult> {
         sandboxId: existingSandbox.id,
       };
     }
+
+    if (!existingUserIsAnonymous) {
+      return {
+        ok: false,
+        error: "Please sign out before starting a guest session.",
+      };
+    }
+
+    if (existingSandbox?.id) {
+      const { data: classId, error: cloneError } = await supabase.rpc("clone_guest_sandbox", {
+        p_sandbox_id: existingSandbox.id,
+        p_guest_user_id: existingUser.id,
+      });
+
+      if (cloneError || typeof classId !== "string" || !classId) {
+        return {
+          ok: false,
+          error: cloneError?.message ?? "Failed to provision the guest classroom.",
+        };
+      }
+
+      return {
+        ok: true,
+        classId,
+        sandboxId: existingSandbox.id,
+      };
+    }
   }
 
-  const { data: authData, error: authError } = await supabase.auth.signInAnonymously();
-  if (authError || !authData.user) {
+  let guestUserId = existingUserIsAnonymous ? existingUser?.id ?? null : null;
+  let shouldSignOutOnFailure = false;
+
+  if (!guestUserId) {
+    const { data: authData, error: authError } = await supabase.auth.signInAnonymously();
+    if (authError || !authData.user) {
+      return {
+        ok: false,
+        error: authError?.message ?? "Failed to create an anonymous guest session.",
+      };
+    }
+
+    guestUserId = authData.user.id;
+    shouldSignOutOnFailure = true;
+  }
+
+  if (!guestUserId) {
     return {
       ok: false,
-      error: authError?.message ?? "Failed to create an anonymous guest session.",
+      error: "Failed to create an anonymous guest session.",
     };
   }
 
   const sandboxId = crypto.randomUUID();
   const { error: sandboxError } = await supabase.from("guest_sandboxes").insert({
     id: sandboxId,
-    user_id: authData.user.id,
+    user_id: guestUserId,
     guest_role: "teacher",
     status: "active",
     expires_at: new Date(Date.now() + GUEST_SESSION_MAX_AGE_MS).toISOString(),
   });
 
   if (sandboxError) {
-    await supabase.auth.signOut();
+    if (shouldSignOutOnFailure) {
+      await supabase.auth.signOut();
+    }
     return {
       ok: false,
       error: `Failed to create a guest sandbox: ${sandboxError.message}`,
@@ -83,12 +136,14 @@ export async function provisionGuestSandbox(): Promise<GuestSandboxResult> {
 
   const { data: classId, error: cloneError } = await supabase.rpc("clone_guest_sandbox", {
     p_sandbox_id: sandboxId,
-    p_guest_user_id: authData.user.id,
+    p_guest_user_id: guestUserId,
   });
 
   if (cloneError || typeof classId !== "string" || !classId) {
     await supabase.from("guest_sandboxes").update({ status: "discarded" }).eq("id", sandboxId);
-    await supabase.auth.signOut();
+    if (shouldSignOutOnFailure) {
+      await supabase.auth.signOut();
+    }
     return {
       ok: false,
       error: cloneError?.message ?? "Failed to provision the guest classroom.",

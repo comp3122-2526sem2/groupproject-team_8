@@ -98,7 +98,7 @@ describe("provisionGuestSandbox", () => {
           data: {
             session: {
               access_token: "guest-token",
-              user: { id: "anon-existing" },
+              user: { id: "anon-existing", is_anonymous: true },
             },
           },
         }),
@@ -127,6 +127,73 @@ describe("provisionGuestSandbox", () => {
       ok: true,
       classId: "class-existing",
       sandboxId: "sandbox-existing",
+    });
+  });
+
+  it("reuses an existing anonymous session instead of replacing it", async () => {
+    const { supabase } = mockSupabase({
+      auth: {
+        getSession: vi.fn().mockResolvedValue({
+          data: {
+            session: {
+              access_token: "guest-token",
+              user: { id: "anon-existing", is_anonymous: true },
+            },
+          },
+        }),
+        signInAnonymously: vi.fn(),
+        signOut: vi.fn(),
+      },
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === "guest_sandboxes") {
+          return makeMutableBuilder({ data: null });
+        }
+        return makeMutableBuilder({ data: null });
+      }),
+    });
+
+    const result = await provisionGuestSandbox();
+
+    expect(supabase.auth.signInAnonymously).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      ok: true,
+      classId: "class-1",
+      sandboxId: expect.any(String),
+    });
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "clone_guest_sandbox",
+      expect.objectContaining({
+        p_guest_user_id: "anon-existing",
+      }),
+    );
+  });
+
+  it("blocks guest provisioning when a real session already exists", async () => {
+    const { supabase } = mockSupabase({
+      auth: {
+        getSession: vi.fn().mockResolvedValue({
+          data: {
+            session: {
+              access_token: "real-token",
+              user: {
+                id: "teacher-1",
+                is_anonymous: false,
+                app_metadata: { provider: "email" },
+              },
+            },
+          },
+        }),
+        signInAnonymously: vi.fn(),
+        signOut: vi.fn(),
+      },
+    });
+
+    const result = await provisionGuestSandbox();
+
+    expect(supabase.auth.signInAnonymously).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      ok: false,
+      error: "Please sign out before starting a guest session.",
     });
   });
 
@@ -159,7 +226,7 @@ describe("provisionGuestSandbox", () => {
           data: {
             session: {
               access_token: "guest-token",
-              user: { id: "anon-existing" },
+              user: { id: "anon-existing", is_anonymous: true },
             },
           },
         }),

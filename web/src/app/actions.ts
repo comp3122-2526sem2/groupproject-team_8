@@ -102,17 +102,6 @@ export async function signUp(formData: FormData) {
   if (existingContext.guestSessionError) {
     redirect(`/register?error=${encodeURIComponent(existingContext.guestSessionError)}`);
   }
-  if (existingContext.isGuest && existingContext.sandboxId) {
-    const discarded = await discardGuestSandbox(existingContext.sandboxId);
-    if (!discarded.ok) {
-      redirect(`/register?error=${encodeURIComponent(discarded.error ?? "Unable to discard guest sandbox")}`);
-    }
-
-    const signOutResult = await existingContext.supabase.auth.signOut();
-    if (signOutResult?.error) {
-      redirect(`/register?error=${encodeURIComponent(signOutResult.error.message)}`);
-    }
-  }
 
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.auth.signUp({
@@ -130,6 +119,24 @@ export async function signUp(formData: FormData) {
       : error.message;
 
     redirect(`/register?error=${encodeURIComponent(msg)}`);
+  }
+
+  if (existingContext.isGuest && existingContext.sandboxId) {
+    let cleanupError: string | null = null;
+
+    const discarded = await discardGuestSandbox(existingContext.sandboxId);
+    if (!discarded.ok) {
+      cleanupError = discarded.error ?? "Unable to discard guest sandbox";
+    }
+
+    const signOutResult = await existingContext.supabase.auth.signOut();
+    if (signOutResult?.error && !cleanupError) {
+      cleanupError = signOutResult.error.message;
+    }
+
+    if (cleanupError) {
+      redirect(`/login?verify=1&error=${encodeURIComponent(cleanupError)}`);
+    }
   }
 
   redirect("/login?verify=1");

@@ -546,6 +546,7 @@ def send_message(settings: Settings, request: ChatWorkspaceMessageSendRequest) -
                         if access.get("is_teacher")
                         else "student_chat_always_on_v1"
                     ),
+                    sandbox_id=request.sandbox_id,
                     session_id=f"class-chat-{request.session_id}",
                     timeout_ms=request.timeout_ms,
                     max_tokens=request.max_tokens,

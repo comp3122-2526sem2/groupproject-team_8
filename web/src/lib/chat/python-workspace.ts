@@ -187,6 +187,7 @@ export async function sendWorkspaceMessageViaPython(input: {
   accessToken: string;
   sessionId: string;
   message: string;
+  sandboxId?: string | null;
 }) {
   const timeoutMs = resolvePythonBackendChatTimeoutMs();
   const pythonChatEngine = resolvePythonChatEngine();
@@ -206,6 +207,7 @@ export async function sendWorkspaceMessageViaPython(input: {
     user_id: input.userId,
     session_id: input.sessionId,
     message: input.message,
+    sandbox_id: input.sandboxId ?? null,
     timeout_ms: timeoutMs,
     tool_mode: pythonChatToolMode,
     tool_catalog: pythonChatToolCatalog,

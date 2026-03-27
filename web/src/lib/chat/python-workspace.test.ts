@@ -147,6 +147,7 @@ describe("python workspace timeout handling", () => {
       accessToken: "session-token",
       sessionId: "session-1",
       message: "Help me solve this derivative.",
+      sandboxId: "sandbox-1",
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -156,6 +157,7 @@ describe("python workspace timeout handling", () => {
       user_id: "student-1",
       session_id: "session-1",
       message: "Help me solve this derivative.",
+      sandbox_id: "sandbox-1",
       tool_mode: "plan",
       tool_catalog: ["grounding_context.read", "web.search"],
       orchestration_hints: expect.objectContaining({
