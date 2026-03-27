@@ -1,5 +1,7 @@
 # AGENTS.md
 
+Last updated: 2026-03-27 12:35:24 HKT
+
 This file provides guidance to Codex (ChatGPT) when working with code in this repository.
 
 ## Project Overview
@@ -41,6 +43,31 @@ pnpm vitest run path/to/testfile.test.ts
 git push origin HEAD
 git push org HEAD
 ```
+
+## Maintenance Protocol
+
+- Treat this file and the reference docs under `./.codex/` as living project guidance.
+- Every time `AGENTS.md` is updated, write the current date and time immediately under the `# AGENTS.md` heading.
+- Periodically review and refresh the companion docs under `./.codex/`, especially `MEMORY.md`, `architecture.md`, `testing.md`, `ui-patterns.md`, `guest-mode.md`, and any other project guidance files added later.
+- When a task changes architecture, workflow, testing approach, UI conventions, guest mode behavior, or other durable project knowledge, update the relevant `./.codex/` doc in the same session whenever practical.
+- Prefer adding a visible `Last updated` note near the top of each `./.codex/` reference doc when it is refreshed so future sessions can quickly judge freshness.
+
+## Reference Docs
+
+- `./.codex/MEMORY.md` - high-level memory index, active work, and cross-links to deeper docs
+- `./.codex/architecture.md` - monorepo structure, system boundaries, deployment/build notes, and key paths
+- `./.codex/testing.md` - test commands, mocking patterns, and testing caveats
+- `./.codex/ui-patterns.md` - UI primitives, tokens, motion conventions, and recent UI decisions
+- `./.codex/guest-mode.md` - guest-mode product decisions, constraints, and implementation direction
+- Check these docs before making broad changes, and keep them aligned with the source code and `AGENTS.md`.
+
+## Git & PR Writing
+
+- Do not use one-line-only commit messages for substantive work in this repository.
+- Prefer a verbose commit message with a clear subject line plus a body that explains the problem, the scope of the change, and any important implementation notes or follow-up context.
+- If a helper skill suggests a terse commit message, follow this repository rule instead and expand the commit message appropriately.
+- GitHub PR summaries should follow the spirit of the `yeet` workflow but be clearer, more structured, and more detailed than the default terse form.
+- For larger PRs, write a detailed PR body with clear sections covering the user-visible problem, root cause, key changes, risks, validation, and any rollout or follow-up notes.
 
 ## Deployment Commands
 
