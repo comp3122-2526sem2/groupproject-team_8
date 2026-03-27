@@ -143,7 +143,7 @@ async function cleanupSandbox(supabase: SupabaseClient, candidate: CleanupCandid
     .from("guest_sandboxes")
     .delete()
     .eq("id", candidate.id)
-    .in("status", ["expired", "discarded"]);
+    .in("status", ["active", "expired", "discarded"]);
 
   if (sandboxDeleteError) {
     throw new Error(`sandbox row cleanup failed: ${sandboxDeleteError.message}`);
