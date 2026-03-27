@@ -264,7 +264,9 @@ python3 -m unittest discover -s backend/tests -p 'test_*.py'
 ## Related Docs
 
 - [`../README.md`](../README.md) — project overview
+- [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — deep technical architecture
 - [`../DESIGN.md`](../DESIGN.md) — product and technical design
 - [`../DEPLOYMENT.md`](../DEPLOYMENT.md) — deployment runbook
+- [`../UIUX.md`](../UIUX.md) — frontend system and UI language
 - [`../web/README.md`](../web/README.md) — frontend behavior and envs
 - [`../supabase/README.md`](../supabase/README.md) — schema, functions, and queueing

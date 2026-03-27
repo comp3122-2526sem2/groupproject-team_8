@@ -256,7 +256,9 @@ pnpm vitest run "web/src/app/classes/[classId]/_components/MaterialActionsMenu.t
 ## Related Docs
 
 - [`../README.md`](../README.md) — project overview
+- [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — deep technical architecture
 - [`../DESIGN.md`](../DESIGN.md) — product and technical design
 - [`../DEPLOYMENT.md`](../DEPLOYMENT.md) — deployment runbook
+- [`../UIUX.md`](../UIUX.md) — UI/UX language and frontend implementation
 - [`../backend/README.md`](../backend/README.md) — backend contract and envs
 - [`../supabase/README.md`](../supabase/README.md) — Supabase migrations and functions

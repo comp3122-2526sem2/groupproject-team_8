@@ -236,7 +236,9 @@ Use this directory as the primary source of truth when you need to understand:
 ## Related Docs
 
 - [`../README.md`](../README.md) — project overview
+- [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — deep technical architecture
 - [`../DESIGN.md`](../DESIGN.md) — product and system design
 - [`../DEPLOYMENT.md`](../DEPLOYMENT.md) — hosted deployment runbook
+- [`../UIUX.md`](../UIUX.md) — frontend language and interface system
 - [`../backend/README.md`](../backend/README.md) — backend service behavior
 - [`../web/README.md`](../web/README.md) — frontend behavior and envs

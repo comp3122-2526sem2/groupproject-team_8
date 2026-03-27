@@ -206,8 +206,10 @@ See [DESIGN.md](DESIGN.md) for the product and technical design, and [DEPLOYMENT
 
 ## Related Docs
 
+- [ARCHITECTURE.md](ARCHITECTURE.md) — deep technical architecture and runtime flows
 - [DESIGN.md](DESIGN.md) — product and technical design
 - [DEPLOYMENT.md](DEPLOYMENT.md) — deployment and operations guide
+- [UIUX.md](UIUX.md) — UI/UX language, system, and frontend implementation
 - [web/README.md](web/README.md) — web app-specific notes
 - [backend/README.md](backend/README.md) — Python backend guide
 - [supabase/README.md](supabase/README.md) — Supabase migration notes
