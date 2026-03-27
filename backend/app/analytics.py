@@ -117,6 +117,113 @@ def format_display_name(display_name: str | None) -> str:
     return f"{parts[0]} {parts[-1][0]}."
 
 
+def _normalize_teaching_brief_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
+def _coerce_teaching_brief_items(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _normalize_teaching_brief_payload(
+    payload: Any,
+    *,
+    topics_by_id: dict[str, dict[str, Any]],
+    display_names: dict[str, str],
+) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("Teaching brief payload must be a JSON object.")
+
+    topic_id_by_title = {
+        _normalize_teaching_brief_text(topic_info.get("title")).casefold(): topic_id
+        for topic_id, topic_info in topics_by_id.items()
+        if _normalize_teaching_brief_text(topic_info.get("title"))
+    }
+
+    attention_items: list[str] = []
+    for item in _coerce_teaching_brief_items(payload.get("attention_items")):
+        if isinstance(item, str):
+            text = _normalize_teaching_brief_text(item)
+        elif isinstance(item, dict):
+            topic = _normalize_teaching_brief_text(item.get("topic") or item.get("title"))
+            detail = _normalize_teaching_brief_text(item.get("detail") or item.get("description"))
+            if topic and detail:
+                text = f"{topic}: {detail}"
+            else:
+                text = topic or detail
+        else:
+            text = ""
+
+        if text:
+            attention_items.append(text)
+
+    misconceptions: list[dict[str, Any]] = []
+    for item in _coerce_teaching_brief_items(payload.get("misconceptions")):
+        if not isinstance(item, dict):
+            continue
+
+        topic_title = _normalize_teaching_brief_text(
+            item.get("topic_title") or item.get("topic") or item.get("title")
+        )
+        topic_id = _normalize_teaching_brief_text(item.get("topic_id")) or None
+        if topic_id is None and topic_title:
+            topic_id = topic_id_by_title.get(topic_title.casefold())
+
+        description = _normalize_teaching_brief_text(item.get("description"))
+        if topic_title or description:
+            misconceptions.append({
+                "topic_id": topic_id,
+                "topic_title": topic_title,
+                "description": description,
+            })
+
+    students_to_watch: list[dict[str, str]] = []
+    for item in _coerce_teaching_brief_items(payload.get("students_to_watch")):
+        if not isinstance(item, dict):
+            continue
+
+        student_id = _normalize_teaching_brief_text(item.get("student_id"))
+        display_name = _normalize_teaching_brief_text(item.get("display_name"))
+        if not display_name and student_id:
+            display_name = display_names.get(student_id, "Unknown")
+
+        reason = _normalize_teaching_brief_text(item.get("reason"))
+        if student_id or display_name or reason:
+            students_to_watch.append({
+                "student_id": student_id,
+                "display_name": display_name or "Unknown",
+                "reason": reason,
+            })
+
+    recommended_activity: dict[str, str] | None = None
+    raw_recommended_activity = payload.get("recommended_activity")
+    if isinstance(raw_recommended_activity, dict):
+        activity_type = _normalize_teaching_brief_text(raw_recommended_activity.get("type"))
+        reason = _normalize_teaching_brief_text(raw_recommended_activity.get("reason"))
+        if activity_type:
+            recommended_activity = {
+                "type": activity_type,
+                "reason": reason,
+            }
+
+    return {
+        "summary": _normalize_teaching_brief_text(payload.get("summary")),
+        "strongest_action": _normalize_teaching_brief_text(payload.get("strongest_action")),
+        "attention_items": attention_items,
+        "misconceptions": misconceptions,
+        "students_to_watch": students_to_watch,
+        "next_step": _normalize_teaching_brief_text(payload.get("next_step")),
+        "recommended_activity": recommended_activity,
+        "evidence_basis": _normalize_teaching_brief_text(payload.get("evidence_basis")),
+    }
+
+
 def _get_cached_snapshot(client: httpx.Client, settings: Settings, class_id: str) -> dict[str, Any] | None:
     """Return cached snapshot if it exists and is less than 1 hour old, else None."""
     base_url = _supabase_base_url(settings)
@@ -170,7 +277,7 @@ def _upsert_snapshot(client: httpx.Client, settings: Settings, class_id: str, pa
         )
 
 
-def _check_teacher_access(
+def _check_teacher_enrollment(
     client: httpx.Client,
     settings: Settings,
     user_id: str,
@@ -237,6 +344,22 @@ def _check_teacher_access(
             code="forbidden",
             status_code=403,
         )
+
+
+def _check_teacher_access(
+    client: httpx.Client,
+    settings: Settings,
+    user_id: str,
+    class_id: str,
+    sandbox_id: str | None = None,
+) -> None:
+    _check_teacher_enrollment(
+        client,
+        settings,
+        user_id,
+        class_id,
+        sandbox_id,
+    )
 
 
 def _generate_insights_payload(
@@ -1015,7 +1138,11 @@ def _generate_teaching_brief_payload(
     if raw_content.startswith("```"):
         lines = raw_content.split("\n")
         raw_content = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-    return json.loads(raw_content)
+    return _normalize_teaching_brief_payload(
+        json.loads(raw_content),
+        topics_by_id=topics_by_id,
+        display_names=display_names,
+    )
 
 
 def get_class_teaching_brief(

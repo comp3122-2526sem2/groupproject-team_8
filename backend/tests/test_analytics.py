@@ -13,6 +13,7 @@ from app.analytics import (
     _check_teacher_enrollment,
     _get_cached_snapshot,
     _get_cached_teaching_brief_snapshot,
+    _normalize_teaching_brief_payload,
     _upsert_teaching_brief_snapshot,
     _mark_teaching_brief_generating,
     compute_risk_level,
@@ -82,6 +83,122 @@ class TopicStatusTests(unittest.TestCase):
         self.assertEqual(compute_topic_status(1.0), "good")
 
 
+class NormalizeTeachingBriefPayloadTests(unittest.TestCase):
+    def test_normalizes_mixed_llm_payload_shapes(self) -> None:
+        payload = _normalize_teaching_brief_payload(
+            {
+                "summary": "  Students need another pass on force pairs. ",
+                "strongest_action": " Re-model the interaction pair. ",
+                "attention_items": [
+                    {"topic": "Newton's Third Law", "detail": "Students swap action and reaction."},
+                    "Net force language",
+                ],
+                "misconceptions": [
+                    {"topic": "Newton's Third Law", "description": "They think bigger objects push harder."},
+                ],
+                "students_to_watch": [
+                    {"student_id": "student-1", "reason": "Low completion this week."},
+                ],
+                "next_step": " Start with a hinge question. ",
+                "recommended_activity": {
+                    "type": "quiz",
+                    "topic": "Newton's Third Law",
+                    "reason": "Check whether the misconception is shrinking.",
+                },
+                "evidence_basis": " Recent quiz attempts and class chat transcripts. ",
+            },
+            topics_by_id={"topic-1": {"title": "Newton's Third Law"}},
+            display_names={"student-1": "Alex P."},
+        )
+
+        self.assertEqual(
+            payload["attention_items"],
+            ["Newton's Third Law: Students swap action and reaction.", "Net force language"],
+        )
+        self.assertEqual(
+            payload["misconceptions"],
+            [
+                {
+                    "topic_id": "topic-1",
+                    "topic_title": "Newton's Third Law",
+                    "description": "They think bigger objects push harder.",
+                }
+            ],
+        )
+        self.assertEqual(
+            payload["students_to_watch"],
+            [
+                {
+                    "student_id": "student-1",
+                    "display_name": "Alex P.",
+                    "reason": "Low completion this week.",
+                }
+            ],
+        )
+        self.assertEqual(
+            payload["recommended_activity"],
+            {
+                "type": "quiz",
+                "reason": "Check whether the misconception is shrinking.",
+            },
+        )
+        self.assertEqual(payload["summary"], "Students need another pass on force pairs.")
+        self.assertEqual(payload["strongest_action"], "Re-model the interaction pair.")
+        self.assertEqual(payload["next_step"], "Start with a hinge question.")
+        self.assertEqual(payload["evidence_basis"], "Recent quiz attempts and class chat transcripts.")
+
+    def test_raises_for_non_object_payload(self) -> None:
+        with self.assertRaises(ValueError):
+            _normalize_teaching_brief_payload([], topics_by_id={}, display_names={})
+
+    def test_wraps_singleton_sections_before_normalizing(self) -> None:
+        payload = _normalize_teaching_brief_payload(
+            {
+                "summary": "Brief",
+                "strongest_action": "Act",
+                "attention_items": "Net force language",
+                "misconceptions": {
+                    "topic": "Newton's Third Law",
+                    "description": "Students think the larger object exerts the larger force.",
+                },
+                "students_to_watch": {
+                    "student_id": "student-1",
+                    "reason": "Needs follow-up on the exit ticket.",
+                },
+                "next_step": "Check understanding",
+                "recommended_activity": {
+                    "type": "exam_review",
+                    "reason": "Target the misconception before the unit test.",
+                },
+                "evidence_basis": "Recent results",
+            },
+            topics_by_id={"topic-1": {"title": "Newton's Third Law"}},
+            display_names={"student-1": "Alex P."},
+        )
+
+        self.assertEqual(payload["attention_items"], ["Net force language"])
+        self.assertEqual(
+            payload["misconceptions"],
+            [
+                {
+                    "topic_id": "topic-1",
+                    "topic_title": "Newton's Third Law",
+                    "description": "Students think the larger object exerts the larger force.",
+                }
+            ],
+        )
+        self.assertEqual(
+            payload["students_to_watch"],
+            [
+                {
+                    "student_id": "student-1",
+                    "display_name": "Alex P.",
+                    "reason": "Needs follow-up on the exit ticket.",
+                }
+            ],
+        )
+
+
 class EmptyPayloadTests(unittest.TestCase):
     def test_is_empty_flag(self) -> None:
         payload = _build_empty_payload()
@@ -140,9 +257,10 @@ class TeacherEnrollmentCheckTests(unittest.TestCase):
     def test_raises_403_when_not_enrolled(self) -> None:
         settings = make_settings()
         client = MagicMock()
-        client.get.return_value = MagicMock(
-            json=MagicMock(return_value=[])
-        )
+        client.get.side_effect = [
+            MagicMock(json=MagicMock(return_value=[{"owner_id": "teacher-2", "sandbox_id": None}])),
+            MagicMock(json=MagicMock(return_value=[])),
+        ]
         with self.assertRaises(ClassDomainError) as ctx:
             _check_teacher_enrollment(client, settings, "user-1", "class-1")
         self.assertEqual(ctx.exception.status_code, 403)
@@ -150,9 +268,10 @@ class TeacherEnrollmentCheckTests(unittest.TestCase):
     def test_raises_403_for_student_role(self) -> None:
         settings = make_settings()
         client = MagicMock()
-        client.get.return_value = MagicMock(
-            json=MagicMock(return_value=[{"role": "student"}])
-        )
+        client.get.side_effect = [
+            MagicMock(json=MagicMock(return_value=[{"owner_id": "teacher-2", "sandbox_id": None}])),
+            MagicMock(json=MagicMock(return_value=[{"role": "student"}])),
+        ]
         with self.assertRaises(ClassDomainError) as ctx:
             _check_teacher_enrollment(client, settings, "user-1", "class-1")
         self.assertEqual(ctx.exception.status_code, 403)
@@ -160,18 +279,20 @@ class TeacherEnrollmentCheckTests(unittest.TestCase):
     def test_passes_for_teacher_role(self) -> None:
         settings = make_settings()
         client = MagicMock()
-        client.get.return_value = MagicMock(
-            json=MagicMock(return_value=[{"role": "teacher"}])
-        )
+        client.get.side_effect = [
+            MagicMock(json=MagicMock(return_value=[{"owner_id": "teacher-2", "sandbox_id": None}])),
+            MagicMock(json=MagicMock(return_value=[{"role": "teacher"}])),
+        ]
         # Should not raise
         _check_teacher_enrollment(client, settings, "user-1", "class-1")
 
     def test_passes_for_ta_role(self) -> None:
         settings = make_settings()
         client = MagicMock()
-        client.get.return_value = MagicMock(
-            json=MagicMock(return_value=[{"role": "ta"}])
-        )
+        client.get.side_effect = [
+            MagicMock(json=MagicMock(return_value=[{"owner_id": "teacher-2", "sandbox_id": None}])),
+            MagicMock(json=MagicMock(return_value=[{"role": "ta"}])),
+        ]
         _check_teacher_enrollment(client, settings, "user-1", "class-1")
 
 
