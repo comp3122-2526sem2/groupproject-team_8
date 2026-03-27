@@ -4,7 +4,7 @@ import {
   refreshClassTeachingBrief,
   type TeachingBriefActionResult,
 } from "@/lib/actions/teaching-brief";
-import { requireVerifiedUser } from "@/lib/auth/session";
+import { requireGuestOrVerifiedUser } from "@/lib/auth/session";
 import { requestClassTeachingBrief } from "@/lib/ai/python-backend";
 
 vi.mock("next/navigation", () => ({
@@ -16,7 +16,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/lib/auth/session", () => ({
-  requireVerifiedUser: vi.fn(),
+  requireGuestOrVerifiedUser: vi.fn(),
 }));
 
 vi.mock("@/lib/ai/python-backend", () => ({
@@ -48,9 +48,10 @@ describe("teaching brief actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    vi.mocked(requireVerifiedUser).mockResolvedValue({
+    vi.mocked(requireGuestOrVerifiedUser).mockResolvedValue({
       user: { id: "teacher-1" },
       accessToken: "session-token",
+      sandboxId: null,
     } as never);
 
     supabaseFromMock.mockImplementation(() =>
@@ -116,6 +117,7 @@ describe("teaching brief actions", () => {
       userId: "teacher-1",
       forceRefresh: false,
       accessToken: "session-token",
+      sandboxId: null,
     });
   });
 
@@ -224,6 +226,7 @@ describe("teaching brief actions", () => {
       userId: "teacher-1",
       forceRefresh: true,
       accessToken: "session-token",
+      sandboxId: null,
     });
   });
 });

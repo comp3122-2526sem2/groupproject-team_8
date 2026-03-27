@@ -257,9 +257,10 @@ class TeacherEnrollmentCheckTests(unittest.TestCase):
     def test_raises_403_when_not_enrolled(self) -> None:
         settings = make_settings()
         client = MagicMock()
-        client.get.return_value = MagicMock(
-            json=MagicMock(return_value=[])
-        )
+        client.get.side_effect = [
+            MagicMock(json=MagicMock(return_value=[{"owner_id": "teacher-2", "sandbox_id": None}])),
+            MagicMock(json=MagicMock(return_value=[])),
+        ]
         with self.assertRaises(ClassDomainError) as ctx:
             _check_teacher_enrollment(client, settings, "user-1", "class-1")
         self.assertEqual(ctx.exception.status_code, 403)
@@ -267,9 +268,10 @@ class TeacherEnrollmentCheckTests(unittest.TestCase):
     def test_raises_403_for_student_role(self) -> None:
         settings = make_settings()
         client = MagicMock()
-        client.get.return_value = MagicMock(
-            json=MagicMock(return_value=[{"role": "student"}])
-        )
+        client.get.side_effect = [
+            MagicMock(json=MagicMock(return_value=[{"owner_id": "teacher-2", "sandbox_id": None}])),
+            MagicMock(json=MagicMock(return_value=[{"role": "student"}])),
+        ]
         with self.assertRaises(ClassDomainError) as ctx:
             _check_teacher_enrollment(client, settings, "user-1", "class-1")
         self.assertEqual(ctx.exception.status_code, 403)
@@ -277,18 +279,20 @@ class TeacherEnrollmentCheckTests(unittest.TestCase):
     def test_passes_for_teacher_role(self) -> None:
         settings = make_settings()
         client = MagicMock()
-        client.get.return_value = MagicMock(
-            json=MagicMock(return_value=[{"role": "teacher"}])
-        )
+        client.get.side_effect = [
+            MagicMock(json=MagicMock(return_value=[{"owner_id": "teacher-2", "sandbox_id": None}])),
+            MagicMock(json=MagicMock(return_value=[{"role": "teacher"}])),
+        ]
         # Should not raise
         _check_teacher_enrollment(client, settings, "user-1", "class-1")
 
     def test_passes_for_ta_role(self) -> None:
         settings = make_settings()
         client = MagicMock()
-        client.get.return_value = MagicMock(
-            json=MagicMock(return_value=[{"role": "ta"}])
-        )
+        client.get.side_effect = [
+            MagicMock(json=MagicMock(return_value=[{"owner_id": "teacher-2", "sandbox_id": None}])),
+            MagicMock(json=MagicMock(return_value=[{"role": "ta"}])),
+        ]
         _check_teacher_enrollment(client, settings, "user-1", "class-1")
 
 

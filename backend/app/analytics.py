@@ -277,7 +277,7 @@ def _upsert_snapshot(client: httpx.Client, settings: Settings, class_id: str, pa
         )
 
 
-def _check_teacher_access(
+def _check_teacher_enrollment(
     client: httpx.Client,
     settings: Settings,
     user_id: str,
@@ -344,6 +344,22 @@ def _check_teacher_access(
             code="forbidden",
             status_code=403,
         )
+
+
+def _check_teacher_access(
+    client: httpx.Client,
+    settings: Settings,
+    user_id: str,
+    class_id: str,
+    sandbox_id: str | None = None,
+) -> None:
+    _check_teacher_enrollment(
+        client,
+        settings,
+        user_id,
+        class_id,
+        sandbox_id,
+    )
 
 
 def _generate_insights_payload(

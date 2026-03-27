@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppIcons } from "@/components/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,7 +51,7 @@ export function AdaptiveTeachingBriefWidget({
     }
   }, [state]);
 
-  async function runRefresh() {
+  const runRefresh = useCallback(async () => {
     if (!classId || refreshInFlightRef.current) {
       return;
     }
@@ -72,7 +72,7 @@ export function AdaptiveTeachingBriefWidget({
     } finally {
       refreshInFlightRef.current = false;
     }
-  }
+  }, [classId]);
 
   useEffect(() => {
     if (
@@ -86,7 +86,7 @@ export function AdaptiveTeachingBriefWidget({
 
     autoRefreshAttemptedRef.current = true;
     void runRefresh();
-  }, [classId, liveState.isStale, liveState.status]);
+  }, [classId, liveState.isStale, liveState.status, runRefresh]);
 
   async function handleRefresh() {
     if (onRefresh) {
