@@ -1,17 +1,14 @@
-// Playwright e2e test config
-// Directly configure constants here for test environment
+// Playwright E2E test configuration
+// Override via environment variables, or edit defaults below for local use.
 
-/**
- * The base URL of the system under test. Example: 'https://your-app-url.com'
- */
-export const BASE_URL = 'https://ai-stem-learning-platform-group-8.vercel.app';
+/** Base URL of the system under test */
+export const BASE_URL =
+  process.env.E2E_BASE_URL || 'https://ai-stem-learning-platform-group-8.vercel.app';
 
-/**
- * Teacher account email for login. Example: 'teacher@example.com'
- */
-export const TEACHER_EMAIL = 'your email';
+/** Teacher account credentials for login */
+export const TEACHER_EMAIL = process.env.E2E_TEACHER_EMAIL || '';
+export const TEACHER_PASSWORD = process.env.E2E_TEACHER_PASSWORD || '';
 
-/**
- * Teacher account password for login. Example: 'yourpassword'
- */
-export const TEACHER_PASSWORD = 'your password';
+/** Student account credentials for login */
+export const STUDENT_EMAIL = process.env.E2E_STUDENT_EMAIL || '';
+export const STUDENT_PASSWORD = process.env.E2E_STUDENT_PASSWORD || '';

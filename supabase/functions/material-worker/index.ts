@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import JSZip from "npm:jszip@3.10.1";
-//import * as pdfjs from "npm:pdfjs-dist@4.10.38/legacy/build/pdf.mjs";
+import * as pdfjs from "npm:pdfjs-dist@4.10.38/legacy/build/pdf.mjs";
 
 type QueueMessage = {
   queue_message_id: number;
