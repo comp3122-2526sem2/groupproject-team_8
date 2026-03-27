@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { requireVerifiedUser } from "@/lib/auth/session";
+import { requireGuestOrVerifiedUser } from "@/lib/auth/session";
 import {
   requestClassTeachingBrief,
   type TeachingBriefActionResult,
@@ -42,11 +42,13 @@ async function loadTeachingBrief(
 ): Promise<TeachingBriefActionResult> {
   let userId: string;
   let accessToken: string | null = null;
+  let sandboxId: string | null = null;
 
   try {
-    const auth = await requireVerifiedUser({ accountType: "teacher" });
+    const auth = await requireGuestOrVerifiedUser({ accountType: "teacher" });
     userId = auth.user.id;
     accessToken = auth.accessToken;
+    sandboxId = auth.sandboxId;
   } catch {
     redirect("/login");
   }
@@ -56,15 +58,18 @@ async function loadTeachingBrief(
   }
 
   const supabase = await createServerSupabaseClient();
-  const { data: classRow, error: enrollmentError } = await supabase
-    .from("enrollments").select("role")
-    .eq("class_id", classId).eq("user_id", userId).maybeSingle();
+  const [{ data: classRow, error: classError }, { data: enrollment, error: enrollmentError }] =
+    await Promise.all([
+      supabase.from("classes").select("owner_id").eq("id", classId).maybeSingle(),
+      supabase.from("enrollments").select("role").eq("class_id", classId).eq("user_id", userId).maybeSingle(),
+    ]);
 
-  if (enrollmentError) {
+  if (classError || enrollmentError) {
     return invalidClassResult("Failed to verify class access.");
   }
 
-  if (!["teacher", "ta"].includes(classRow?.role ?? "")) {
+  const isTeacher = classRow?.owner_id === userId || ["teacher", "ta"].includes(enrollment?.role ?? "");
+  if (!isTeacher) {
     return invalidClassResult("Unauthorized.");
   }
 
@@ -74,6 +79,7 @@ async function loadTeachingBrief(
       userId,
       forceRefresh,
       accessToken,
+      sandboxId,
     });
   } catch (error) {
     return invalidClassResult(

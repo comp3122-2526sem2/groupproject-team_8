@@ -31,6 +31,8 @@ export type PythonBackendGenerateResult = {
 export type PythonBackendEmbeddingsOptions = {
   inputs: string[];
   timeoutMs: number;
+  accessToken?: string | null;
+  sandboxId?: string | null;
   providerOrder?: PythonBackendProvider[];
   defaultProvider?: PythonBackendProvider;
 };
@@ -147,10 +149,16 @@ export async function generateEmbeddingsViaPythonBackend(
     timeoutMs: options.timeoutMs,
     body: {
       inputs: options.inputs,
+      sandbox_id: options.sandboxId ?? null,
       timeout_ms: options.timeoutMs,
       provider_order: options.providerOrder,
       default_provider: options.defaultProvider,
     },
+    headers: options.accessToken
+      ? {
+          Authorization: `Bearer ${options.accessToken}`,
+        }
+      : undefined,
   });
 
   return {
@@ -167,6 +175,7 @@ export async function requestClassTeachingBrief(input: {
   userId: string;
   forceRefresh: boolean;
   accessToken?: string | null;
+  sandboxId?: string | null;
 }): Promise<TeachingBriefActionResult> {
   const payload = await postToPythonBackend<{
     status: TeachingBriefStatus;
@@ -201,6 +210,7 @@ export async function requestClassTeachingBrief(input: {
     body: {
       user_id: input.userId,
       class_id: input.classId,
+      sandbox_id: input.sandboxId ?? null,
       force_refresh: input.forceRefresh,
     },
     headers: input.accessToken

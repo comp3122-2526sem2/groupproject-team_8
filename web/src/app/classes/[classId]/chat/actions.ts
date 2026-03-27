@@ -87,7 +87,7 @@ export async function sendOpenPracticeMessage(
   classId: string,
   formData: FormData,
 ): Promise<ChatActionResult> {
-  const { supabase, user, authError } = await requireAuthenticatedUser();
+  const { supabase, user, authError, sandboxId } = await requireAuthenticatedUser();
 
   if (!user) {
     return { ok: false, error: "Please sign in to use chat." };
@@ -120,6 +120,7 @@ export async function sendOpenPracticeMessage(
       userId: user.id,
       userMessage: message,
       transcript,
+      sandboxId,
       purpose: "student_chat_open_v2",
     });
 
@@ -248,7 +249,7 @@ export async function sendAssignmentMessage(
   assignmentId: string,
   formData: FormData,
 ): Promise<ChatActionResult> {
-  const { supabase, user, authError } = await requireAuthenticatedUser({ accountType: "student" });
+  const { supabase, user, authError, sandboxId } = await requireAuthenticatedUser({ accountType: "student" });
 
   if (!user) {
     return { ok: false, error: "Please sign in to continue." };
@@ -302,6 +303,7 @@ export async function sendAssignmentMessage(
       userId: user.id,
       userMessage: message,
       transcript,
+      sandboxId,
       assignmentInstructions,
       purpose: "student_chat_assignment_v2",
     });

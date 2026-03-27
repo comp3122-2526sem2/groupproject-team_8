@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, TypeVar, cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 from fastapi import FastAPI, Request
@@ -26,6 +27,12 @@ from app.chat_workspace import (
 from app.classes import ClassDomainError, create_class, join_class
 from app.config import Settings, get_settings
 from app.flashcards import generate_flashcards
+from app.guest_rate_limit import (
+    acquire_guest_ai_slot,
+    check_guest_ai_access,
+    increment_guest_ai_usage,
+    release_guest_ai_slot,
+)
 from app.materials import dispatch_material_job, process_material_jobs
 from app.providers import generate_embeddings_with_fallback, generate_with_fallback
 from app.quiz import generate_quiz
@@ -54,6 +61,7 @@ from app.schemas import (
 
 app = FastAPI(title="STEM Learning Python Backend", version="0.1.0")
 app.include_router(analytics_router)
+logger = logging.getLogger(__name__)
 USER_TOKEN_VERIFY_TIMEOUT_SECONDS = 8.0
 UserBoundPayload = TypeVar("UserBoundPayload", bound=BaseModel)
 
@@ -138,24 +146,53 @@ async def _resolve_actor_user_id(
     request: Request,
     settings: Settings,
 ) -> tuple[str | None, JSONResponse | None]:
+    actor, user_error = await _resolve_actor_user(request, settings)
+    if user_error:
+        return None, user_error
+    user_id = actor.get("id") if isinstance(actor, dict) else None
+    if not isinstance(user_id, str) or not user_id.strip():
+        return None, _error_response(
+            request,
+            status_code=401,
+            message="Invalid user token.",
+            code="invalid_user_token",
+        )
+    return user_id.strip(), None
+
+
+async def _resolve_actor_user(
+    request: Request,
+    settings: Settings,
+) -> tuple[dict[str, Any] | None, JSONResponse | None]:
+    cached_actor = getattr(request.state, "resolved_actor_user", None)
+    cached_actor_error = getattr(request.state, "resolved_actor_user_error", None)
+    if cached_actor is not None or cached_actor_error is not None:
+        return cached_actor, cached_actor_error
+
     token = _parse_bearer_token(request.headers.get("authorization"))
     if not token or token == settings.python_backend_api_key:
-        return None, _error_response(
+        error_response = _error_response(
             request,
             status_code=401,
             message="A valid user bearer token is required.",
             code="user_token_required",
         )
+        request.state.resolved_actor_user = None
+        request.state.resolved_actor_user_error = error_response
+        return None, error_response
 
     supabase_url = settings.supabase_url
     auth_api_key = settings.supabase_publishable_key or settings.supabase_service_role_key
     if not supabase_url or not auth_api_key:
-        return None, _error_response(
+        error_response = _error_response(
             request,
             status_code=503,
             message="Python backend user authentication is misconfigured.",
             code="backend_user_auth_misconfigured",
         )
+        request.state.resolved_actor_user = None
+        request.state.resolved_actor_user_error = error_response
+        return None, error_response
 
     try:
         async with httpx.AsyncClient(timeout=USER_TOKEN_VERIFY_TIMEOUT_SECONDS, trust_env=False) as client:
@@ -167,38 +204,53 @@ async def _resolve_actor_user_id(
                 },
             )
     except httpx.TimeoutException:
-        return None, _error_response(
+        error_response = _error_response(
             request,
             status_code=504,
             message="Timed out while validating user token.",
             code="user_auth_timeout",
         )
+        request.state.resolved_actor_user = None
+        request.state.resolved_actor_user_error = error_response
+        return None, error_response
     except httpx.HTTPError:
-        return None, _error_response(
+        error_response = _error_response(
             request,
             status_code=502,
             message="Failed to validate user token.",
             code="user_auth_unavailable",
         )
+        request.state.resolved_actor_user = None
+        request.state.resolved_actor_user_error = error_response
+        return None, error_response
 
     if response.status_code >= 400:
-        return None, _error_response(
+        error_response = _error_response(
             request,
             status_code=401,
             message="Invalid user token.",
             code="invalid_user_token",
         )
+        request.state.resolved_actor_user = None
+        request.state.resolved_actor_user_error = error_response
+        return None, error_response
 
     payload = _safe_json_dict(response)
     user_id = payload.get("id")
     if not isinstance(user_id, str) or not user_id.strip():
-        return None, _error_response(
+        error_response = _error_response(
             request,
             status_code=401,
             message="Invalid user token.",
             code="invalid_user_token",
         )
-    return user_id.strip(), None
+        request.state.resolved_actor_user = None
+        request.state.resolved_actor_user_error = error_response
+        return None, error_response
+
+    request.state.resolved_actor_user = payload
+    request.state.resolved_actor_user_error = None
+    return payload, None
 
 
 def _safe_json_dict(response: httpx.Response) -> dict[str, Any]:
@@ -209,6 +261,107 @@ def _safe_json_dict(response: httpx.Response) -> dict[str, Any]:
     if isinstance(payload, dict):
         return payload
     return {}
+
+
+def _is_uuid_like(value: str) -> bool:
+    try:
+        UUID(value)
+    except (ValueError, TypeError):
+        return False
+    return True
+
+
+async def _load_guest_sandbox_for_actor(
+    settings: Settings,
+    actor_user_id: str,
+    sandbox_id: str,
+) -> tuple[dict[str, Any] | None, bool]:
+    supabase_url = settings.supabase_url
+    service_role_key = settings.supabase_service_role_key
+    if not supabase_url or not service_role_key:
+        return None, True
+
+    if not _is_uuid_like(actor_user_id) or not _is_uuid_like(sandbox_id):
+        return None, False
+
+    sandbox_url = f"{supabase_url.rstrip('/')}/rest/v1/guest_sandboxes"
+    try:
+        async with httpx.AsyncClient(timeout=USER_TOKEN_VERIFY_TIMEOUT_SECONDS, trust_env=False) as client:
+            response = await client.get(
+                sandbox_url,
+                headers={
+                    "Authorization": f"Bearer {service_role_key}",
+                    "apikey": service_role_key,
+                },
+                params={
+                    "select": ",".join(
+                        [
+                            "id",
+                            "chat_messages_used",
+                            "quiz_generations_used",
+                            "flashcard_generations_used",
+                            "blueprint_regenerations_used",
+                            "embedding_operations_used",
+                        ]
+                    ),
+                    "user_id": f"eq.{actor_user_id}",
+                    "id": f"eq.{sandbox_id}",
+                    "status": "eq.active",
+                    "limit": "1",
+                },
+            )
+    except httpx.TimeoutException:
+        logger.warning(
+            "Guest sandbox ownership check timed out for sandbox_id=%s actor_user_id=%s",
+            sandbox_id,
+            actor_user_id,
+        )
+        return None, True
+    except httpx.HTTPError:
+        logger.exception(
+            "Guest sandbox ownership check request failed for sandbox_id=%s actor_user_id=%s",
+            sandbox_id,
+            actor_user_id,
+        )
+        return None, True
+
+    if response.status_code >= 400:
+        logger.warning(
+            "Guest sandbox ownership check returned upstream status=%s for sandbox_id=%s actor_user_id=%s",
+            response.status_code,
+            sandbox_id,
+            actor_user_id,
+        )
+        return None, True
+
+    try:
+        payload = response.json()
+    except ValueError:
+        logger.warning(
+            "Guest sandbox ownership check returned invalid JSON for sandbox_id=%s actor_user_id=%s",
+            sandbox_id,
+            actor_user_id,
+        )
+        return None, True
+    if not isinstance(payload, list):
+        logger.warning(
+            "Guest sandbox ownership check returned a non-list payload for sandbox_id=%s actor_user_id=%s",
+            sandbox_id,
+            actor_user_id,
+        )
+        return None, True
+    if not payload:
+        return None, False
+
+    sandbox = payload[0]
+    if not isinstance(sandbox, dict):
+        logger.warning(
+            "Guest sandbox ownership check returned an invalid row payload for sandbox_id=%s actor_user_id=%s",
+            sandbox_id,
+            actor_user_id,
+        )
+        return None, True
+    return sandbox, False
 
 
 def _bind_actor_user_id(
@@ -225,6 +378,106 @@ def _bind_actor_user_id(
             code="user_id_mismatch",
         )
     return cast(UserBoundPayload, payload.model_copy(update={"user_id": actor_user_id})), None
+
+
+def _is_guest_actor(actor: dict[str, Any] | None) -> bool:
+    return bool(isinstance(actor, dict) and actor.get("is_anonymous") is True)
+
+
+def _get_sandbox_id(payload: BaseModel) -> str | None:
+    sandbox_id = getattr(payload, "sandbox_id", None)
+    if isinstance(sandbox_id, str) and sandbox_id.strip():
+        return sandbox_id.strip()
+    return None
+
+
+def _has_user_bearer_token(request: Request, settings: Settings) -> bool:
+    token = _parse_bearer_token(request.headers.get("authorization"))
+    return bool(token and token != settings.python_backend_api_key)
+
+
+async def _enforce_guest_ai_guards(
+    request: Request,
+    settings: Settings,
+    payload: BaseModel,
+    feature: str,
+) -> tuple[str | None, JSONResponse | None]:
+    sandbox_id = _get_sandbox_id(payload)
+    if not sandbox_id and not _has_user_bearer_token(request, settings):
+        return None, None
+
+    actor, actor_error = await _resolve_actor_user(request, settings)
+    if actor_error:
+        return None, actor_error
+    if not _is_guest_actor(actor):
+        return None, None
+
+    if not sandbox_id:
+        return None, _error_response(
+            request,
+            status_code=400,
+            message="Guest requests must include sandbox_id.",
+            code="guest_sandbox_required",
+        )
+
+    actor_user_id = actor.get("id") if isinstance(actor, dict) else None
+    if not isinstance(actor_user_id, str) or not actor_user_id.strip():
+        return None, _error_response(
+            request,
+            status_code=401,
+            message="Invalid user token.",
+            code="invalid_user_token",
+        )
+
+    sandbox, verification_unavailable = await _load_guest_sandbox_for_actor(
+        settings,
+        actor_user_id.strip(),
+        sandbox_id,
+    )
+    if verification_unavailable:
+        return None, _error_response(
+            request,
+            status_code=502,
+            message="Guest sandbox ownership could not be verified right now.",
+            code="guest_sandbox_verification_unavailable",
+        )
+
+    if not sandbox:
+        return None, _error_response(
+            request,
+            status_code=403,
+            message="Guest sandbox does not belong to the authenticated user.",
+            code="guest_sandbox_forbidden",
+        )
+
+    allowed, reason = check_guest_ai_access(settings, sandbox, feature)
+    if not allowed:
+        return None, _error_response(
+            request,
+            status_code=429,
+            message=reason or f"Guest {feature} limit reached.",
+            code="guest_rate_limit",
+        )
+
+    try:
+        acquired = await acquire_guest_ai_slot(settings, sandbox_id)
+    except RuntimeError:
+        return None, _error_response(
+            request,
+            status_code=502,
+            message="Guest AI quota enforcement is unavailable right now.",
+            code="guest_rate_limit_unavailable",
+        )
+
+    if not acquired:
+        return None, _error_response(
+            request,
+            status_code=429,
+            message=f"Guest concurrent {feature} limit reached.",
+            code="guest_concurrent_limit",
+        )
+
+    return sandbox_id, None
 
 
 @app.get("/healthz")
@@ -266,8 +519,19 @@ async def embeddings(request: Request, payload: EmbeddingsRequest):
     if unauthorized:
         return unauthorized
 
+    guest_sandbox_id, guest_error = await _enforce_guest_ai_guards(
+        request,
+        settings,
+        payload,
+        "embedding",
+    )
+    if guest_error:
+        return guest_error
+
     try:
         result = await run_in_threadpool(generate_embeddings_with_fallback, settings, payload)
+        if guest_sandbox_id:
+            await increment_guest_ai_usage(settings, guest_sandbox_id, "embedding")
         return ApiEnvelope(
             ok=True,
             data=result.model_dump(),
@@ -282,6 +546,15 @@ async def embeddings(request: Request, payload: EmbeddingsRequest):
                 meta={"request_id": request.state.request_id},
             ).model_dump(),
         )
+    finally:
+        if guest_sandbox_id:
+            try:
+                await release_guest_ai_slot(settings, guest_sandbox_id)
+            except RuntimeError:
+                logger.exception(
+                    "Failed to release guest concurrency slot after embeddings request for sandbox_id=%s",
+                    guest_sandbox_id,
+                )
 
 
 @app.post("/v1/materials/dispatch")
@@ -417,8 +690,19 @@ async def generate_blueprints(request: Request, payload: BlueprintGenerateReques
     if unauthorized:
         return unauthorized
 
+    guest_sandbox_id, guest_error = await _enforce_guest_ai_guards(
+        request,
+        settings,
+        payload,
+        "blueprint",
+    )
+    if guest_error:
+        return guest_error
+
     try:
         result = await run_in_threadpool(generate_blueprint, settings, payload)
+        if guest_sandbox_id:
+            await increment_guest_ai_usage(settings, guest_sandbox_id, "blueprint")
         return ApiEnvelope(
             ok=True,
             data=result.model_dump(),
@@ -433,6 +717,15 @@ async def generate_blueprints(request: Request, payload: BlueprintGenerateReques
                 meta={"request_id": request.state.request_id},
             ).model_dump(),
         )
+    finally:
+        if guest_sandbox_id:
+            try:
+                await release_guest_ai_slot(settings, guest_sandbox_id)
+            except RuntimeError:
+                logger.exception(
+                    "Failed to release guest concurrency slot after blueprint request for sandbox_id=%s",
+                    guest_sandbox_id,
+                )
 
 
 @app.post("/v1/quiz/generate")
@@ -441,8 +734,19 @@ async def generate_quizzes(request: Request, payload: QuizGenerateRequest):
     if unauthorized:
         return unauthorized
 
+    guest_sandbox_id, guest_error = await _enforce_guest_ai_guards(
+        request,
+        settings,
+        payload,
+        "quiz",
+    )
+    if guest_error:
+        return guest_error
+
     try:
         result = await run_in_threadpool(generate_quiz, settings, payload)
+        if guest_sandbox_id:
+            await increment_guest_ai_usage(settings, guest_sandbox_id, "quiz")
         return ApiEnvelope(
             ok=True,
             data=result.model_dump(),
@@ -457,6 +761,15 @@ async def generate_quizzes(request: Request, payload: QuizGenerateRequest):
                 meta={"request_id": request.state.request_id},
             ).model_dump(),
         )
+    finally:
+        if guest_sandbox_id:
+            try:
+                await release_guest_ai_slot(settings, guest_sandbox_id)
+            except RuntimeError:
+                logger.exception(
+                    "Failed to release guest concurrency slot after quiz request for sandbox_id=%s",
+                    guest_sandbox_id,
+                )
 
 
 @app.post("/v1/flashcards/generate")
@@ -465,8 +778,19 @@ async def generate_flashcards_route(request: Request, payload: FlashcardsGenerat
     if unauthorized:
         return unauthorized
 
+    guest_sandbox_id, guest_error = await _enforce_guest_ai_guards(
+        request,
+        settings,
+        payload,
+        "flashcards",
+    )
+    if guest_error:
+        return guest_error
+
     try:
         result = await run_in_threadpool(generate_flashcards, settings, payload)
+        if guest_sandbox_id:
+            await increment_guest_ai_usage(settings, guest_sandbox_id, "flashcards")
         return ApiEnvelope(
             ok=True,
             data=result.model_dump(),
@@ -481,6 +805,15 @@ async def generate_flashcards_route(request: Request, payload: FlashcardsGenerat
                 meta={"request_id": request.state.request_id},
             ).model_dump(),
         )
+    finally:
+        if guest_sandbox_id:
+            try:
+                await release_guest_ai_slot(settings, guest_sandbox_id)
+            except RuntimeError:
+                logger.exception(
+                    "Failed to release guest concurrency slot after flashcards request for sandbox_id=%s",
+                    guest_sandbox_id,
+                )
 
 
 @app.post("/v1/chat/generate")
@@ -495,8 +828,19 @@ async def generate_chat_route(request: Request, payload: ChatGenerateRequest):
         return payload_error
     assert bound_payload is not None
 
+    guest_sandbox_id, guest_error = await _enforce_guest_ai_guards(
+        request,
+        settings,
+        bound_payload,
+        "chat",
+    )
+    if guest_error:
+        return guest_error
+
     try:
         result = await run_in_threadpool(generate_chat, settings, bound_payload)
+        if guest_sandbox_id:
+            await increment_guest_ai_usage(settings, guest_sandbox_id, "chat")
         return ApiEnvelope(
             ok=True,
             data=result.model_dump(),
@@ -511,6 +855,15 @@ async def generate_chat_route(request: Request, payload: ChatGenerateRequest):
                 meta={"request_id": request.state.request_id},
             ).model_dump(),
         )
+    finally:
+        if guest_sandbox_id:
+            try:
+                await release_guest_ai_slot(settings, guest_sandbox_id)
+            except RuntimeError:
+                logger.exception(
+                    "Failed to release guest concurrency slot after chat request for sandbox_id=%s",
+                    guest_sandbox_id,
+                )
 
 
 @app.post("/v1/chat/canvas")
@@ -792,8 +1145,19 @@ async def send_chat_workspace_message_route(request: Request, payload: ChatWorks
         return payload_error
     assert bound_payload is not None
 
+    guest_sandbox_id, guest_error = await _enforce_guest_ai_guards(
+        request,
+        settings,
+        bound_payload,
+        "chat",
+    )
+    if guest_error:
+        return guest_error
+
     try:
         result = await run_in_threadpool(send_message, settings, bound_payload)
+        if guest_sandbox_id:
+            await increment_guest_ai_usage(settings, guest_sandbox_id, "chat")
         return ApiEnvelope(
             ok=True,
             data=result,
@@ -818,6 +1182,15 @@ async def send_chat_workspace_message_route(request: Request, payload: ChatWorks
                 meta={"request_id": request.state.request_id},
             ).model_dump(),
         )
+    finally:
+        if guest_sandbox_id:
+            try:
+                await release_guest_ai_slot(settings, guest_sandbox_id)
+            except RuntimeError:
+                logger.exception(
+                    "Failed to release guest concurrency slot after workspace chat request for sandbox_id=%s",
+                    guest_sandbox_id,
+                )
 
 
 def _parse_bearer_token(header: str | None) -> str | None:

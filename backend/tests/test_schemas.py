@@ -6,7 +6,11 @@ import unittest
 
 from pydantic import ValidationError
 
-from app.schemas import ChatWorkspaceMessageSendRequest, QuizGenerateRequest
+from app.schemas import (
+    ChatGenerateRequest,
+    ChatWorkspaceMessageSendRequest,
+    QuizGenerateRequest,
+)
 
 
 class SchemasTests(unittest.TestCase):
@@ -19,6 +23,18 @@ class SchemasTests(unittest.TestCase):
             tool_mode="off",
         )
         self.assertEqual(payload.class_id, "class-1")
+
+    def test_chat_generate_schema_accepts_optional_sandbox_id(self) -> None:
+        payload = ChatGenerateRequest(
+            class_id="class-1",
+            user_id="user-1",
+            class_title="Biology",
+            user_message="hello",
+            blueprint_context="bp",
+            material_context="ctx",
+            sandbox_id="sandbox-1",
+        )
+        self.assertEqual(payload.sandbox_id, "sandbox-1")
 
     def test_quiz_schema_rejects_invalid_count(self) -> None:
         with self.assertRaises(ValidationError):

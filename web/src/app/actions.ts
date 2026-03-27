@@ -1,7 +1,15 @@
 "use server";
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getAuthContext } from "@/lib/auth/session";
 import { validatePasswordPolicy } from "@/lib/auth/password-policy";
+import { isGuestModeEnabled } from "@/lib/guest/config";
+import {
+  discardGuestSandbox,
+  provisionGuestSandboxWithOptions,
+  resetGuestSandbox,
+  switchGuestRole,
+} from "@/lib/guest/sandbox";
 import { getAuthRedirectUrl } from "@/lib/site-url";
 import { redirect } from "next/navigation";
 
@@ -38,8 +46,9 @@ function redirectToAuthPage(path: string, message?: string) {
     redirect(path);
   }
 
+  const resolvedMessage = message ?? "Unexpected authentication error";
   const url = new URL(path, "http://localhost");
-  url.searchParams.set("error", message);
+  url.searchParams.set("error", resolvedMessage);
   redirect(`${url.pathname}?${url.searchParams.toString()}`);
 }
 
@@ -87,6 +96,35 @@ export async function signUp(formData: FormData) {
   const passwordValidation = validatePasswordPolicy(password);
   if (!passwordValidation.ok) {
     redirect(`/register?error=${encodeURIComponent(passwordValidation.message)}`);
+  }
+
+  const existingContext = await getAuthContext();
+  if (existingContext.guestSessionError) {
+    redirect(`/register?error=${encodeURIComponent(existingContext.guestSessionError)}`);
+  }
+
+  if (existingContext.isGuest && existingContext.sandboxId) {
+    const discarded = await discardGuestSandbox(existingContext.sandboxId);
+    if (!discarded.ok) {
+      redirect(
+        `/register?error=${encodeURIComponent(
+          discarded.error ?? "Unable to discard guest sandbox.",
+        )}`,
+      );
+    }
+
+    const signOutResult = await existingContext.supabase.auth.signOut();
+    if (signOutResult?.error) {
+      redirect(`/register?error=${encodeURIComponent(signOutResult.error.message)}`);
+    }
+
+    const redirectUrl = new URL("/register", "http://localhost");
+    redirectUrl.searchParams.set("guest", "ready");
+    if (email) {
+      redirectUrl.searchParams.set("email", email);
+    }
+    redirectUrl.searchParams.set("account_type", accountType);
+    redirect(redirectUrl.pathname + "?" + redirectUrl.searchParams.toString());
   }
 
   const supabase = await createServerSupabaseClient();
@@ -167,4 +205,66 @@ export async function signOut() {
   const supabase = await createServerSupabaseClient();
   await supabase.auth.signOut();
   redirect("/login");
+}
+
+export async function startGuestSession(input?: {
+  ipAddress?: string | null;
+}): Promise<{
+  ok: boolean;
+  redirectTo?: string;
+  error?: string;
+}> {
+  if (!isGuestModeEnabled()) {
+    return { ok: false, error: "Guest mode is not enabled." };
+  }
+
+  const result = await provisionGuestSandboxWithOptions({
+    ipAddress: input?.ipAddress ?? null,
+  });
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+
+  return {
+    ok: true,
+    redirectTo: `/classes/${result.classId}`,
+  };
+}
+
+export async function resetGuestSessionAction(): Promise<{
+  ok: boolean;
+  redirectTo?: string;
+  error?: string;
+}> {
+  const context = await getAuthContext();
+  if (context.guestSessionError) {
+    return { ok: false, error: context.guestSessionError };
+  }
+  if (!context.user || !context.isGuest) {
+    return { ok: false, error: "Guest session not found." };
+  }
+
+  const result = await resetGuestSandbox(context.user.id);
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+
+  return {
+    ok: true,
+    redirectTo: `/classes/${result.classId}`,
+  };
+}
+
+export async function switchGuestRoleAction(
+  nextRole: "teacher" | "student",
+): Promise<{ ok: boolean; error?: string }> {
+  const context = await getAuthContext();
+  if (context.guestSessionError) {
+    return { ok: false, error: context.guestSessionError };
+  }
+  if (!context.isGuest || !context.sandboxId) {
+    return { ok: false, error: "Guest session not found." };
+  }
+
+  return switchGuestRole(context.sandboxId, nextRole);
 }

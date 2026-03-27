@@ -12,7 +12,7 @@ import {
   detectMaterialKind,
   sanitizeFilename,
 } from "@/lib/materials/extract-text";
-import { requireVerifiedUser } from "@/lib/auth/session";
+import { requireGuestOrVerifiedUser, requireVerifiedUser } from "@/lib/auth/session";
 
 vi.mock("next/navigation", () => ({
   redirect: vi.fn((url: string) => {
@@ -52,6 +52,19 @@ const supabaseStorageMock = {
   })),
 };
 
+const adminBucketMock = {
+  upload: vi.fn().mockResolvedValue({ error: null }),
+  remove: vi.fn().mockResolvedValue({ error: null }),
+  createSignedUrl: vi.fn().mockResolvedValue({
+    data: { signedUrl: "https://test.supabase.co/storage/v1/sign/file.pdf" },
+    error: null,
+  }),
+};
+
+const adminStorageMock = {
+  from: vi.fn(() => adminBucketMock),
+};
+
 const bucketMock = {
   upload: vi.fn().mockResolvedValue({ error: null }),
   remove: vi.fn().mockResolvedValue({ error: null }),
@@ -71,6 +84,13 @@ vi.mock("@/lib/supabase/server", () => ({
 
 vi.mock("@/lib/auth/session", () => ({
   requireVerifiedUser: vi.fn(),
+  requireGuestOrVerifiedUser: vi.fn(),
+}));
+
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminSupabaseClient: vi.fn(() => ({
+    storage: adminStorageMock,
+  })),
 }));
 
 function makeBuilder(result: unknown) {
@@ -137,6 +157,22 @@ describe("class actions", () => {
       accountType: "teacher",
       isEmailVerified: true,
       accessToken: "session-token",
+    } as never);
+    vi.mocked(requireGuestOrVerifiedUser).mockResolvedValue({
+      supabase: {
+        from: supabaseFromMock,
+        rpc: supabaseRpcMock,
+        storage: supabaseStorageMock,
+      },
+      user: { id: "u1", email: "user@example.com" },
+      profile: { id: "u1", account_type: "teacher" },
+      accountType: "teacher",
+      isEmailVerified: true,
+      accessToken: "session-token",
+      isGuest: false,
+      sandboxId: null,
+      guestRole: null,
+      guestClassId: null,
     } as never);
   });
 
@@ -509,6 +545,66 @@ describe("class actions", () => {
     );
   });
 
+  it("queues guest uploads for processing instead of marking them ready immediately", async () => {
+    process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
+
+    vi.mocked(requireGuestOrVerifiedUser).mockResolvedValueOnce({
+      supabase: {
+        from: supabaseFromMock,
+        rpc: supabaseRpcMock,
+        storage: supabaseStorageMock,
+      },
+      user: { id: "guest-1", email: null },
+      profile: { id: "guest-1", account_type: "teacher" },
+      accountType: "teacher",
+      isEmailVerified: true,
+      accessToken: "guest-token",
+      isGuest: true,
+      sandboxId: "sandbox-1",
+      guestRole: "teacher",
+      guestClassId: "class-1",
+    } as never);
+
+    const file = new File([Buffer.from("hello")], "lecture.pdf", {
+      type: "application/pdf",
+    });
+    const formData = new FormData();
+    formData.set("file", file);
+    formData.set("title", "Lecture 1");
+
+    vi.mocked(detectMaterialKind).mockReturnValue("pdf");
+    vi.mocked(sanitizeFilename).mockReturnValue("lecture.pdf");
+    const fetchMock = vi.spyOn(global, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ok: true, data: { enqueued: true, triggered: true } }),
+    } as Response);
+
+    supabaseFromMock.mockImplementation((table: string) => {
+      if (table === "classes") {
+        return makeBuilder({
+          data: { id: "class-1", owner_id: "guest-1" },
+          error: null,
+        });
+      }
+      if (table === "enrollments") {
+        return makeBuilder({ data: null, error: null });
+      }
+      if (table === "materials") {
+        return makeBuilder({ data: { id: "m1" }, error: null });
+      }
+      return makeBuilder({ data: null, error: null });
+    });
+
+    await expectRedirect(
+      () => uploadMaterial("class-1", formData),
+      "/classes/class-1?uploaded=processing",
+    );
+
+    expect(adminStorageMock.from).toHaveBeenCalledWith("materials");
+    expect(adminBucketMock.upload).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("rolls back uploaded material when python dispatch fails before enqueue", async () => {
     process.env.PYTHON_BACKEND_URL = "http://localhost:8001";
 
@@ -641,10 +737,12 @@ describe("class actions", () => {
 describe("getMaterialSignedUrl", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(requireVerifiedUser).mockResolvedValue({
+    vi.mocked(requireGuestOrVerifiedUser).mockResolvedValue({
       supabase: { from: supabaseFromMock, storage: supabaseStorageMock } as never,
       user: { id: "user-1" } as never,
       accessToken: "tok",
+      isGuest: false,
+      sandboxId: null,
     } as never);
     supabaseStorageMock.from.mockReturnValue(bucketMock);
   });
@@ -694,10 +792,12 @@ describe("getMaterialSignedUrl", () => {
 describe("deleteMaterial", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(requireVerifiedUser).mockResolvedValue({
+    vi.mocked(requireGuestOrVerifiedUser).mockResolvedValue({
       supabase: { from: supabaseFromMock, storage: supabaseStorageMock } as never,
       user: { id: "user-1" } as never,
       accessToken: "tok",
+      isGuest: false,
+      sandboxId: null,
     } as never);
     supabaseStorageMock.from.mockReturnValue(bucketMock);
     bucketMock.remove.mockResolvedValue({ error: null });

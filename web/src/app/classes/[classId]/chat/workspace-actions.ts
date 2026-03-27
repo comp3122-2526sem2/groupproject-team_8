@@ -61,7 +61,7 @@ function toFriendlyPythonWorkspaceError(error: unknown) {
 }
 
 async function resolveAccess(classId: string) {
-  const { supabase, user, accessToken, authError } = await requireAuthenticatedUser();
+  const { supabase, user, accessToken, authError, sandboxId } = await requireAuthenticatedUser();
 
   if (!user) {
     return {
@@ -89,6 +89,7 @@ async function resolveAccess(classId: string) {
     supabase,
     user,
     accessToken,
+    sandboxId,
     role,
   };
 }
@@ -104,6 +105,7 @@ export async function listClassChatParticipants(
       classId,
       userId: access.user.id,
       accessToken: access.accessToken ?? "",
+      sandboxId: access.sandboxId,
     });
     return { ok: true, data };
   } catch (error) {
@@ -123,6 +125,7 @@ export async function listClassChatSessions(
       classId,
       userId: access.user.id,
       accessToken: access.accessToken ?? "",
+      sandboxId: access.sandboxId,
       ownerUserId,
     });
     return { ok: true, data };
@@ -143,6 +146,7 @@ export async function createClassChatSession(
       classId,
       userId: access.user.id,
       accessToken: access.accessToken ?? "",
+      sandboxId: access.sandboxId,
       title,
     });
     return { ok: true, data };
@@ -170,6 +174,7 @@ export async function renameClassChatSession(
       classId,
       userId: access.user.id,
       accessToken: access.accessToken ?? "",
+      sandboxId: access.sandboxId,
       sessionId,
       title: normalizedTitle,
     });
@@ -191,6 +196,7 @@ export async function archiveClassChatSession(
       classId,
       userId: access.user.id,
       accessToken: access.accessToken ?? "",
+      sandboxId: access.sandboxId,
       sessionId,
     });
     return { ok: true, data };
@@ -223,6 +229,7 @@ export async function listClassChatMessages(
       classId,
       userId: access.user.id,
       accessToken: access.accessToken ?? "",
+      sandboxId: access.sandboxId,
       sessionId,
       ownerUserId,
       beforeCursor: options?.beforeCursor,
@@ -270,6 +277,7 @@ export async function sendClassChatMessage(
       accessToken: access.accessToken ?? "",
       sessionId,
       message,
+      sandboxId: access.sandboxId,
     });
     return { ok: true, data };
   } catch (error) {

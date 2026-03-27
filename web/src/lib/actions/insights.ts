@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { requireVerifiedUser } from "@/lib/auth/session";
+import { requireGuestOrVerifiedUser } from "@/lib/auth/session";
 import { parseCanvasSpec } from "@/lib/canvas/spec";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { CanvasSpec } from "@/lib/chat/types";
@@ -64,9 +64,11 @@ export async function getClassInsights(
   forceRefresh = false,
 ): Promise<InsightsResult> {
   let userId: string;
+  let sandboxId: string | null = null;
   try {
-    const auth = await requireVerifiedUser({ accountType: "teacher" });
+    const auth = await requireGuestOrVerifiedUser({ accountType: "teacher" });
     userId = auth.user.id;
+    sandboxId = auth.sandboxId;
   } catch {
     redirect("/login");
   }
@@ -77,13 +79,16 @@ export async function getClassInsights(
   }
   // Class ownership check
   const supabase = await createServerSupabaseClient();
-  const { data: classRow, error: enrollmentError } = await supabase
-    .from("enrollments").select("role")
-    .eq("class_id", classId).eq("user_id", userId).maybeSingle();
-  if (enrollmentError) {
+  const [{ data: classRow, error: classError }, { data: enrollment, error: enrollmentError }] =
+    await Promise.all([
+      supabase.from("classes").select("owner_id").eq("id", classId).maybeSingle(),
+      supabase.from("enrollments").select("role").eq("class_id", classId).eq("user_id", userId).maybeSingle(),
+    ]);
+  if (classError || enrollmentError) {
     return { ok: false, error: "Failed to verify class access." };
   }
-  if (!["teacher", "ta"].includes(classRow?.role ?? "")) {
+  const isTeacher = classRow?.owner_id === userId || ["teacher", "ta"].includes(enrollment?.role ?? "");
+  if (!isTeacher) {
     return { ok: false, error: "Unauthorized." };
   }
 
@@ -109,6 +114,7 @@ export async function getClassInsights(
         body: JSON.stringify({
           user_id: userId,
           class_id: classId,
+          sandbox_id: sandboxId,
           force_refresh: forceRefresh,
         }),
         signal: controller.signal,
@@ -155,10 +161,12 @@ export async function queryClassData(
 
   let userId: string;
   let accessToken: string | null = null;
+  let sandboxId: string | null = null;
   try {
-    const auth = await requireVerifiedUser({ accountType: "teacher" });
+    const auth = await requireGuestOrVerifiedUser({ accountType: "teacher" });
     userId = auth.user.id;
     accessToken = auth.accessToken;
+    sandboxId = auth.sandboxId;
   } catch {
     redirect("/login");
   }
@@ -173,13 +181,16 @@ export async function queryClassData(
   }
   // Class ownership check
   const supabase = await createServerSupabaseClient();
-  const { data: classRow, error: enrollmentError } = await supabase
-    .from("enrollments").select("role")
-    .eq("class_id", classId).eq("user_id", userId).maybeSingle();
-  if (enrollmentError) {
+  const [{ data: classRow, error: classError }, { data: enrollment, error: enrollmentError }] =
+    await Promise.all([
+      supabase.from("classes").select("owner_id").eq("id", classId).maybeSingle(),
+      supabase.from("enrollments").select("role").eq("class_id", classId).eq("user_id", userId).maybeSingle(),
+    ]);
+  if (classError || enrollmentError) {
     return { ok: false, error: "Failed to verify class access." };
   }
-  if (!["teacher", "ta"].includes(classRow?.role ?? "")) {
+  const isTeacher = classRow?.owner_id === userId || ["teacher", "ta"].includes(enrollment?.role ?? "");
+  if (!isTeacher) {
     return { ok: false, error: "Unauthorized." };
   }
 
@@ -206,6 +217,7 @@ export async function queryClassData(
         body: JSON.stringify({
           user_id: userId,
           class_id: classId,
+          sandbox_id: sandboxId,
           query: safeQuery,
         }),
         signal: controller.signal,

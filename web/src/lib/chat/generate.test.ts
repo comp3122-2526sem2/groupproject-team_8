@@ -87,6 +87,10 @@ describe("generateGroundedChatResponse", () => {
     });
 
     expect(generateChatViaPythonBackend).toHaveBeenCalledTimes(1);
+    expect(retrieveMaterialContext).toHaveBeenCalledWith("class-1", "Can we review kinematics?", undefined, {
+      accessToken: "session-token",
+      sandboxId: null,
+    });
     expect(generateChatViaPythonBackend).toHaveBeenCalledWith(
       expect.objectContaining({
         classId: "class-1",
@@ -97,6 +101,45 @@ describe("generateGroundedChatResponse", () => {
           engine: "direct_v1",
         }),
       }),
+    );
+  });
+
+  it("passes sandboxId to python chat generation for guest sessions", async () => {
+    generateChatViaPythonBackend.mockResolvedValue({
+      payload: {
+        safety: "ok",
+        answer: "Grounded response",
+        citations: [],
+      },
+      provider: "openrouter",
+      model: "or-model",
+      usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
+      latencyMs: 15,
+    });
+
+    await generateGroundedChatResponse({
+      classId: "class-1",
+      classTitle: "Physics",
+      userId: "student-1",
+      userMessage: "Can we review kinematics?",
+      transcript: [],
+      sandboxId: "sandbox-1",
+      purpose: "student_chat_open_v2",
+    });
+
+    expect(generateChatViaPythonBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sandboxId: "sandbox-1",
+      }),
+    );
+    expect(retrieveMaterialContext).toHaveBeenCalledWith(
+      "class-1",
+      "Can we review kinematics?",
+      undefined,
+      {
+        accessToken: "session-token",
+        sandboxId: "sandbox-1",
+      },
     );
   });
 

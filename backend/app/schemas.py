@@ -35,6 +35,7 @@ class GenerateResult(BaseModel):
 
 class EmbeddingsRequest(BaseModel):
     inputs: list[str]
+    sandbox_id: str | None = None
     timeout_ms: int | None = None
     provider_order: list[AiProvider] | None = None
     default_provider: AiProvider | None = None
@@ -97,23 +98,27 @@ class ClassJoinResult(BaseModel):
 class ChatWorkspaceParticipantsRequest(BaseModel):
     class_id: str = Field(min_length=1)
     user_id: str = Field(min_length=1)
+    sandbox_id: str | None = None
 
 
 class ChatWorkspaceSessionsListRequest(BaseModel):
     class_id: str = Field(min_length=1)
     user_id: str = Field(min_length=1)
+    sandbox_id: str | None = None
     owner_user_id: str | None = None
 
 
 class ChatWorkspaceSessionCreateRequest(BaseModel):
     class_id: str = Field(min_length=1)
     user_id: str = Field(min_length=1)
+    sandbox_id: str | None = None
     title: str | None = None
 
 
 class ChatWorkspaceSessionRenameRequest(BaseModel):
     class_id: str = Field(min_length=1)
     user_id: str = Field(min_length=1)
+    sandbox_id: str | None = None
     session_id: str = Field(min_length=1)
     title: str = Field(min_length=1)
 
@@ -121,12 +126,14 @@ class ChatWorkspaceSessionRenameRequest(BaseModel):
 class ChatWorkspaceSessionArchiveRequest(BaseModel):
     class_id: str = Field(min_length=1)
     user_id: str = Field(min_length=1)
+    sandbox_id: str | None = None
     session_id: str = Field(min_length=1)
 
 
 class ChatWorkspaceMessagesListRequest(BaseModel):
     class_id: str = Field(min_length=1)
     user_id: str = Field(min_length=1)
+    sandbox_id: str | None = None
     session_id: str = Field(min_length=1)
     owner_user_id: str | None = None
     before_cursor: str | None = None
@@ -138,6 +145,7 @@ class ChatWorkspaceMessageSendRequest(BaseModel):
     user_id: str = Field(min_length=1)
     session_id: str = Field(min_length=1)
     message: str = Field(min_length=1)
+    sandbox_id: str | None = None
     timeout_ms: int | None = None
     max_tokens: int | None = Field(default=None, ge=1, le=16000)
     tool_mode: Literal["off", "plan", "auto"] = "off"
@@ -151,6 +159,7 @@ class BlueprintGenerateRequest(BaseModel):
     level: str | None = None
     material_count: int = Field(ge=1)
     material_text: str = Field(min_length=1)
+    sandbox_id: str | None = None
     timeout_ms: int | None = None
 
 
@@ -168,6 +177,7 @@ class QuizGenerateRequest(BaseModel):
     instructions: str = Field(min_length=1)
     blueprint_context: str
     material_context: str
+    sandbox_id: str | None = None
     timeout_ms: int | None = None
 
 
@@ -192,6 +202,7 @@ class FlashcardsGenerateRequest(BaseModel):
     instructions: str = Field(min_length=1)
     blueprint_context: str
     material_context: str
+    sandbox_id: str | None = None
     timeout_ms: int | None = None
 
 
@@ -222,6 +233,7 @@ class ChatGenerateRequest(BaseModel):
     transcript: list[ChatTranscriptTurn] = Field(default_factory=list)
     blueprint_context: str
     material_context: str
+    sandbox_id: str | None = None
     compacted_memory_context: str | None = None
     assignment_instructions: str | None = None
     purpose: str | None = None
@@ -274,4 +286,5 @@ class CanvasResponse(BaseModel):
 class DataQueryRequest(BaseModel):
     user_id: str
     class_id: str
+    sandbox_id: str | None = None
     query: str = Field(min_length=1, max_length=500)

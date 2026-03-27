@@ -100,7 +100,7 @@ async function logQuizAiRequest(input: {
 }
 
 export async function generateQuizDraft(classId: string, formData: FormData) {
-  const { supabase, user, authError } = await requireAuthenticatedUser({ accountType: "teacher" });
+  const { supabase, user, authError, sandboxId, accessToken } = await requireAuthenticatedUser({ accountType: "teacher" });
   if (!user) {
     redirect("/login");
   }
@@ -195,13 +195,18 @@ export async function generateQuizDraft(classId: string, formData: FormData) {
     }
 
     const retrievalQuery = `Generate ${questionCount} multiple choice quiz questions. ${instructions}`;
-    const materialContext = await retrieveMaterialContext(classId, retrievalQuery);
+    const materialContext = await retrieveMaterialContext(classId, retrievalQuery, undefined, {
+      accessToken,
+      sandboxId,
+    });
     const pythonResult = await generateQuizViaPythonBackend({
       classTitle: role.classTitle,
       questionCount,
       instructions,
       blueprintContext: blueprintContextStr,
       materialContext,
+      accessToken,
+      sandboxId,
     });
     usedProvider = pythonResult.provider;
     usedModel = pythonResult.model;
