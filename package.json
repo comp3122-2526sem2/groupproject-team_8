@@ -8,7 +8,8 @@
     "start": "pnpm --dir web start",
     "lint": "pnpm --dir web lint",
     "test": "pnpm --dir web test",
-    "test:watch": "pnpm --dir web test:watch"
+    "test:watch": "pnpm --dir web test:watch",
+    "export:mermaid-png": "node scripts/export-mermaid-pngs.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",

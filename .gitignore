@@ -62,3 +62,6 @@ supabase/.temp/
 
 # Git worktrees
 .worktrees/
+
+# docs
+docs/mermaid-png/
