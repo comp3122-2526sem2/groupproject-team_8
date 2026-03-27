@@ -1,0 +1,47 @@
+# E2E Test Guide
+
+## 1. Prerequisites
+
+- Install project dependencies: `pnpm install`
+- Install Playwright browsers: `pnpm exec playwright install`
+- Set required environment variables (see below)
+
+## 2. Configuration
+
+Test config: `tests/config.ts`
+
+Required environment variables:
+
+| Variable | Description |
+|----------|-------------|
+| `E2E_BASE_URL` | System-under-test URL (defaults to Vercel deployment) |
+| `E2E_TEACHER_EMAIL` | Teacher account email |
+| `E2E_TEACHER_PASSWORD` | Teacher account password |
+| `E2E_STUDENT_EMAIL` | Student account email (optional, for student tests) |
+| `E2E_STUDENT_PASSWORD` | Student account password (optional, for student tests) |
+
+## 3. Running Tests
+
+Run a single spec:
+
+```sh
+npx playwright test --config tests/playwright.config.ts tests/e2e/teacher-nav.spec.ts
+```
+
+Run all E2E tests:
+
+```sh
+npx playwright test --config tests/playwright.config.ts
+```
+
+## 4. Results
+
+- Screenshots and traces are saved to `tests/results/` on failure
+- HTML report: `tests/results/playwright/html-report/`
+- Open report in browser: `npx playwright show-report tests/results/playwright/html-report`
+
+## 5. Troubleshooting
+
+- If login fails, verify your credentials are set correctly in env vars
+- If rate-limited, wait a moment and retry
+- For timeout issues, check network connectivity to the target URL
