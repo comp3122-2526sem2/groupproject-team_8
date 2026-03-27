@@ -494,7 +494,7 @@ async function uploadMaterialMutationInternal(
     extraction_stats: null,
     page_count: null,
   };
-  const processingStatus = isGuest ? "ready" : "processing";
+  const processingStatus = "processing";
   const storageClient = isGuest ? createAdminSupabaseClient().storage : supabase.storage;
 
   const { error: uploadError } = await storageClient

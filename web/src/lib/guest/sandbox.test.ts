@@ -4,6 +4,11 @@ vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: vi.fn(),
 }));
 
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminSupabaseClient: vi.fn(),
+}));
+
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   discardGuestSandbox,
@@ -14,7 +19,7 @@ import {
 } from "./sandbox";
 
 function makeMutableBuilder(result: { data?: unknown; error?: { message: string } | null }) {
-  return {
+  const builder = {
     data: result.data ?? null,
     error: result.error ?? null,
     select: vi.fn().mockReturnThis(),
@@ -27,11 +32,25 @@ function makeMutableBuilder(result: { data?: unknown; error?: { message: string 
       error: result.error ?? null,
     }),
   };
+  return Object.assign(builder, {
+    then: (
+      onFulfilled: (value: { data: unknown; error: { message: string } | null }) => unknown,
+      onRejected?: (reason: unknown) => unknown,
+    ) =>
+      Promise.resolve({
+        data: result.data ?? null,
+        error: result.error ?? null,
+      }).then(onFulfilled, onRejected),
+  });
 }
 
 function mockSupabase(overrides: Partial<Record<string, unknown>> = {}) {
   const guestSandboxBuilder = makeMutableBuilder({ data: null });
+  const materialsBuilder = makeMutableBuilder({ data: [] });
   const classesBuilder = makeMutableBuilder({ data: null });
+  const adminBucket = {
+    remove: vi.fn().mockResolvedValue({ error: null }),
+  };
   const supabase = {
     auth: {
       getSession: vi.fn().mockResolvedValue({
@@ -50,6 +69,9 @@ function mockSupabase(overrides: Partial<Record<string, unknown>> = {}) {
       if (table === "guest_sandboxes") {
         return guestSandboxBuilder;
       }
+      if (table === "materials") {
+        return materialsBuilder;
+      }
       if (table === "classes") {
         return classesBuilder;
       }
@@ -63,7 +85,18 @@ function mockSupabase(overrides: Partial<Record<string, unknown>> = {}) {
   };
 
   vi.mocked(createServerSupabaseClient).mockResolvedValue(supabase as never);
-  return { supabase, guestSandboxBuilder, classesBuilder };
+  vi.mocked(createAdminSupabaseClient).mockReturnValue({
+    from: vi.fn().mockImplementation((table: string) => {
+      if (table === "materials") {
+        return materialsBuilder;
+      }
+      return makeMutableBuilder({ data: null });
+    }),
+    storage: {
+      from: vi.fn(() => adminBucket),
+    },
+  } as never);
+  return { supabase, guestSandboxBuilder, materialsBuilder, classesBuilder, adminBucket };
 }
 
 describe("provisionGuestSandbox", () => {
@@ -113,6 +146,8 @@ describe("provisionGuestSandbox", () => {
               class_id: "class-existing",
               status: "active",
               guest_role: "teacher",
+              expires_at: "2026-03-27T08:00:00.000Z",
+              last_seen_at: "2026-03-27T12:00:00.000Z",
             },
           });
         }
@@ -166,6 +201,62 @@ describe("provisionGuestSandbox", () => {
         p_guest_user_id: "anon-existing",
       }),
     );
+  });
+
+  it("does not reuse an expired anonymous sandbox", async () => {
+    const { supabase } = mockSupabase({
+      auth: {
+        getSession: vi.fn().mockResolvedValue({
+          data: {
+            session: {
+              access_token: "guest-token",
+              user: { id: "anon-existing", is_anonymous: true },
+            },
+          },
+        }),
+        signInAnonymously: vi.fn().mockResolvedValue({
+          data: {
+            user: { id: "anon-new" },
+            session: { access_token: "guest-token-2" },
+          },
+          error: null,
+        }),
+        signOut: vi.fn().mockResolvedValue({ error: null }),
+      },
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === "guest_sandboxes") {
+          return makeMutableBuilder({
+            data: {
+              id: "sandbox-expired",
+              class_id: "class-existing",
+              status: "active",
+              guest_role: "teacher",
+              expires_at: "2026-03-26T23:59:59.000Z",
+              last_seen_at: "2026-03-27T00:00:00.000Z",
+            },
+          });
+        }
+        if (table === "materials") {
+          return makeMutableBuilder({ data: [] });
+        }
+        return makeMutableBuilder({ data: null });
+      }),
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-27T00:00:00.000Z"));
+
+    const result = await provisionGuestSandbox();
+
+    expect(supabase.auth.signOut).toHaveBeenCalled();
+    expect(supabase.auth.signInAnonymously).toHaveBeenCalled();
+    expect(result).toEqual({
+      ok: true,
+      classId: "class-1",
+      sandboxId: expect.any(String),
+    });
+
+    vi.useRealTimers();
   });
 
   it("blocks guest provisioning when a real session already exists", async () => {
@@ -367,14 +458,56 @@ describe("discardGuestSandbox", () => {
   });
 
   it("uses the atomic discard rpc", async () => {
-    const { supabase } = mockSupabase();
+    const { supabase, adminBucket } = mockSupabase();
+    vi.mocked(createAdminSupabaseClient).mockReturnValue({
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === "materials") {
+          return makeMutableBuilder({
+            data: [
+              { storage_path: "classes/class-1/sandboxes/sandbox-1/material-1/file.pdf" },
+              { storage_path: "guest-seed/demo.pdf" },
+            ],
+          });
+        }
+        return makeMutableBuilder({ data: null });
+      }),
+      storage: {
+        from: vi.fn(() => adminBucket),
+      },
+    } as never);
 
     const result = await discardGuestSandbox("sandbox-1");
 
+    expect(adminBucket.remove).toHaveBeenCalledWith([
+      "classes/class-1/sandboxes/sandbox-1/material-1/file.pdf",
+    ]);
     expect(supabase.rpc).toHaveBeenCalledWith("discard_guest_sandbox", {
       p_sandbox_id: "sandbox-1",
     });
     expect(result).toEqual({ ok: true });
+  });
+
+  it("returns an error when sandbox storage cleanup fails", async () => {
+    const { supabase, adminBucket } = mockSupabase();
+    vi.mocked(createAdminSupabaseClient).mockReturnValue({
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === "materials") {
+          return makeMutableBuilder({
+            data: [{ storage_path: "classes/class-1/sandboxes/sandbox-1/material-1/file.pdf" }],
+          });
+        }
+        return makeMutableBuilder({ data: null });
+      }),
+      storage: {
+        from: vi.fn(() => adminBucket),
+      },
+    } as never);
+    adminBucket.remove.mockResolvedValueOnce({ error: { message: "storage remove failed" } });
+
+    const result = await discardGuestSandbox("sandbox-1");
+
+    expect(result).toEqual({ ok: false, error: "storage remove failed" });
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
   it("returns an error when the atomic discard rpc fails", async () => {

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { GUEST_SESSION_INACTIVITY_TIMEOUT_MS } from "@/lib/guest/config";
+import { isGuestSandboxExpired } from "@/lib/guest/session-expiry";
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request });
@@ -85,11 +85,7 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL("/?error=guest-session-check-failed", request.url));
     }
 
-    const isExpired =
-      !sandbox ||
-      !sandbox.class_id ||
-      new Date(sandbox.expires_at).getTime() <= Date.now() ||
-      new Date(sandbox.last_seen_at).getTime() <= Date.now() - GUEST_SESSION_INACTIVITY_TIMEOUT_MS;
+    const isExpired = !sandbox || isGuestSandboxExpired(sandbox);
 
     if (isExpired) {
       if (sandbox) {

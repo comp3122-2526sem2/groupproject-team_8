@@ -1,6 +1,12 @@
 "use server";
 
 import { GUEST_SESSION_MAX_AGE_MS } from "@/lib/guest/config";
+import {
+  getGuestSessionExpiredMessage,
+  isGuestSandboxExpired,
+} from "@/lib/guest/session-expiry";
+import { isGuestMutableStoragePath } from "@/lib/guest/storage";
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export type GuestSandboxResult =
@@ -19,6 +25,13 @@ type ActiveSandboxRow = {
   class_id: string | null;
   status: "active" | "expired" | "discarded";
   guest_role: "teacher" | "student";
+  expires_at: string | null;
+  last_seen_at: string | null;
+};
+
+const MATERIALS_BUCKET = "materials";
+type GuestMaterialStorageRow = {
+  storage_path: string | null;
 };
 
 function isMaybeSingleNoRowsError(error: { code?: string; message?: string } | null | undefined) {
@@ -32,6 +45,56 @@ function isAnonymousUser(user: {
   return user?.is_anonymous === true || user?.app_metadata?.provider === "anonymous";
 }
 
+async function expireGuestSandbox(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  sandboxId: string,
+) {
+  await supabase
+    .from("guest_sandboxes")
+    .update({
+      status: "expired",
+    })
+    .eq("id", sandboxId)
+    .eq("status", "active");
+}
+
+async function removeGuestSandboxStorageObjects(
+  sandboxId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const adminSupabase = createAdminSupabaseClient();
+  const { data: materials, error: materialsError } = await adminSupabase
+    .from("materials")
+    .select("storage_path")
+    .eq("sandbox_id", sandboxId);
+
+  if (materialsError) {
+    return { ok: false, error: materialsError.message };
+  }
+
+  const materialRows = (materials ?? []) as GuestMaterialStorageRow[];
+  const storagePaths = Array.from(
+    new Set(
+      materialRows
+        .map((material) => material.storage_path)
+        .filter((path): path is string => typeof path === "string" && isGuestMutableStoragePath(path, sandboxId)),
+    ),
+  );
+
+  if (storagePaths.length === 0) {
+    return { ok: true };
+  }
+
+  const { error: removeError } = await adminSupabase.storage
+    .from(MATERIALS_BUCKET)
+    .remove(storagePaths);
+
+  if (removeError) {
+    return { ok: false, error: removeError.message };
+  }
+
+  return { ok: true };
+}
+
 export async function provisionGuestSandbox(): Promise<GuestSandboxResult> {
   const supabase = await createServerSupabaseClient();
 
@@ -40,11 +103,13 @@ export async function provisionGuestSandbox(): Promise<GuestSandboxResult> {
   } = await supabase.auth.getSession();
   const existingUser = existingSession?.user ?? null;
   const existingUserIsAnonymous = isAnonymousUser(existingUser);
+  let guestUserId = existingUserIsAnonymous ? existingUser?.id ?? null : null;
+  let shouldSignOutOnFailure = false;
 
   if (existingUser) {
     const { data: existingSandbox, error: existingSandboxError } = await supabase
       .from("guest_sandboxes")
-      .select("id,class_id,status,guest_role")
+      .select("id,class_id,status,guest_role,expires_at,last_seen_at")
       .eq("user_id", existingUser.id)
       .eq("status", "active")
       .maybeSingle<ActiveSandboxRow>();
@@ -56,7 +121,21 @@ export async function provisionGuestSandbox(): Promise<GuestSandboxResult> {
       };
     }
 
-    if (existingSandbox?.class_id) {
+    if (existingSandbox && isGuestSandboxExpired(existingSandbox)) {
+      await expireGuestSandbox(supabase, existingSandbox.id);
+
+      if (!existingUserIsAnonymous) {
+        return {
+          ok: false,
+          error: getGuestSessionExpiredMessage(),
+        };
+      }
+
+      await supabase.auth.signOut();
+      guestUserId = null;
+    }
+
+    if (existingSandbox?.class_id && !isGuestSandboxExpired(existingSandbox)) {
       return {
         ok: true,
         classId: existingSandbox.class_id,
@@ -71,7 +150,7 @@ export async function provisionGuestSandbox(): Promise<GuestSandboxResult> {
       };
     }
 
-    if (existingSandbox?.id) {
+    if (existingSandbox?.id && !isGuestSandboxExpired(existingSandbox)) {
       const { data: classId, error: cloneError } = await supabase.rpc("clone_guest_sandbox", {
         p_sandbox_id: existingSandbox.id,
         p_guest_user_id: existingUser.id,
@@ -91,9 +170,6 @@ export async function provisionGuestSandbox(): Promise<GuestSandboxResult> {
       };
     }
   }
-
-  let guestUserId = existingUserIsAnonymous ? existingUser?.id ?? null : null;
-  let shouldSignOutOnFailure = false;
 
   if (!guestUserId) {
     const { data: authData, error: authError } = await supabase.auth.signInAnonymously();
@@ -197,6 +273,11 @@ export async function discardGuestSandbox(
   sandboxId: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const supabase = await createServerSupabaseClient();
+
+  const storageCleanup = await removeGuestSandboxStorageObjects(sandboxId);
+  if (!storageCleanup.ok) {
+    return { ok: false, error: storageCleanup.error };
+  }
 
   const { error } = await supabase.rpc("discard_guest_sandbox", {
     p_sandbox_id: sandboxId,

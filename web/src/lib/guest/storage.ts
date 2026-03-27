@@ -27,6 +27,10 @@ export function isGuestSafeStoragePath(path: string, sandboxId: string) {
   );
 }
 
+export function isGuestMutableStoragePath(path: string, sandboxId: string) {
+  return isGuestSafeStoragePath(path, sandboxId) && !path.startsWith(SEED_STORAGE_PREFIX);
+}
+
 export function assertGuestSafeSignedUrl(storagePath: string, sandboxId: string) {
   if (!isGuestSafeStoragePath(storagePath, sandboxId)) {
     throw new Error(`Storage path ${storagePath} is not accessible in guest mode.`);

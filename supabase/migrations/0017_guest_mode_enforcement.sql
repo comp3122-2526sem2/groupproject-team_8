@@ -134,7 +134,6 @@ begin
 
   update public.guest_sandboxes
      set status = 'discarded',
-         class_id = null,
          active_ai_requests = 0,
          last_seen_at = now(),
          updated_at = now()

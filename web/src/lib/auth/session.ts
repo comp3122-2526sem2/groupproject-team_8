@@ -1,4 +1,8 @@
 import { redirect } from "next/navigation";
+import {
+  getGuestSessionExpiredMessage,
+  isGuestSandboxExpired,
+} from "@/lib/guest/session-expiry";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export type AccountType = "teacher" | "student";
@@ -15,6 +19,8 @@ type GuestSandboxRow = {
   class_id: string | null;
   guest_role: GuestRole;
   status: "active" | "expired" | "discarded";
+  expires_at: string | null;
+  last_seen_at: string | null;
 };
 
 export type AuthContext = {
@@ -27,6 +33,7 @@ export type AuthContext = {
   isEmailVerified: boolean;
   isGuest: boolean;
   guestSessionError: string | null;
+  guestSessionExpired: boolean;
   sandboxId: string | null;
   guestRole: GuestRole | null;
   guestClassId: string | null;
@@ -34,6 +41,10 @@ export type AuthContext = {
 
 function loginErrorUrl(message: string) {
   return `/login?error=${encodeURIComponent(message)}`;
+}
+
+function guestSessionRedirectUrl(context: Pick<AuthContext, "guestSessionExpired">) {
+  return context.guestSessionExpired ? "/?guest=expired" : "/?error=guest-session-check-failed";
 }
 
 function isAnonymousUser(
@@ -69,6 +80,7 @@ export async function getAuthContext(): Promise<AuthContext> {
       isEmailVerified: false,
       isGuest: false,
       guestSessionError: null,
+      guestSessionExpired: false,
       sandboxId: null,
       guestRole: null,
       guestClassId: null,
@@ -78,6 +90,7 @@ export async function getAuthContext(): Promise<AuthContext> {
   let profile: ProfileRow | null = null;
   let isGuest = false;
   let guestSessionError: string | null = null;
+  let guestSessionExpired = false;
   let sandboxId: string | null = null;
   let guestRole: GuestRole | null = null;
   let guestClassId: string | null = null;
@@ -85,18 +98,28 @@ export async function getAuthContext(): Promise<AuthContext> {
   if (isAnonymousUser(user)) {
     const { data: sandbox, error: sandboxError } = await supabase
       .from("guest_sandboxes")
-      .select("id,class_id,guest_role,status")
+      .select("id,class_id,guest_role,status,expires_at,last_seen_at")
       .eq("user_id", user.id)
       .eq("status", "active")
       .maybeSingle<GuestSandboxRow>();
 
     if (sandboxError && sandboxError.code !== "PGRST116") {
       guestSessionError = "We couldn't verify your guest session right now. Please try again.";
-    } else if (sandbox) {
+    } else if (sandbox && !isGuestSandboxExpired(sandbox)) {
       isGuest = true;
       sandboxId = sandbox.id;
       guestRole = sandbox.guest_role;
       guestClassId = sandbox.class_id;
+    } else if (sandbox) {
+      guestSessionError = getGuestSessionExpiredMessage();
+      guestSessionExpired = true;
+
+      await supabase
+        .from("guest_sandboxes")
+        .update({ status: "expired" })
+        .eq("id", sandbox.id)
+        .eq("status", "active");
+      await supabase.auth.signOut();
     }
   } else {
     const { data } = await supabase
@@ -116,6 +139,7 @@ export async function getAuthContext(): Promise<AuthContext> {
     isEmailVerified: Boolean(user.email_confirmed_at),
     isGuest,
     guestSessionError,
+    guestSessionExpired,
     sandboxId,
     guestRole,
     guestClassId,
@@ -132,7 +156,7 @@ export async function requireVerifiedUser(options?: {
   }
 
   if (context.guestSessionError) {
-    redirect("/?error=guest-session-check-failed");
+    redirect(guestSessionRedirectUrl(context));
   }
 
   if (context.isGuest) {
@@ -184,7 +208,7 @@ export async function requireGuestOrVerifiedUser(options?: {
   }
 
   if (context.guestSessionError) {
-    redirect("/?error=guest-session-check-failed");
+    redirect(guestSessionRedirectUrl(context));
   }
 
   if (context.isGuest) {

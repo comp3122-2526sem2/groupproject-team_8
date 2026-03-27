@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: vi.fn(),
@@ -8,14 +8,16 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getAuthContext } from "./session";
 
 function makeBuilder<T>(data: T | null) {
-  return {
+  const builder = {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
+    update: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn().mockResolvedValue({
       data,
       error: data ? null : { code: "PGRST116" },
     }),
   };
+  return builder;
 }
 
 function mockSupabase(overrides: {
@@ -32,9 +34,10 @@ function mockSupabase(overrides: {
                 access_token: "test-token",
                 user: overrides.sessionUser,
               }
-            : null,
+          : null,
         },
       }),
+      signOut: vi.fn().mockResolvedValue({ error: null }),
     },
     from: vi.fn().mockImplementation((table: string) => {
       if (table === "profiles") {
@@ -54,6 +57,12 @@ function mockSupabase(overrides: {
 describe("getAuthContext", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-27T00:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("returns anonymous-free context when there is no session", async () => {
@@ -64,6 +73,7 @@ describe("getAuthContext", () => {
     expect(context.user).toBeNull();
     expect(context.isGuest).toBe(false);
     expect(context.guestSessionError).toBeNull();
+    expect(context.guestSessionExpired).toBe(false);
     expect(context.sandboxId).toBeNull();
   });
 
@@ -87,6 +97,7 @@ describe("getAuthContext", () => {
     expect(context.user?.id).toBe("user-1");
     expect(context.isGuest).toBe(false);
     expect(context.guestSessionError).toBeNull();
+    expect(context.guestSessionExpired).toBe(false);
     expect(context.profile?.account_type).toBe("teacher");
     expect(context.profile?.display_name).toBe("Teacher Example");
     expect(context.isEmailVerified).toBe(true);
@@ -106,6 +117,8 @@ describe("getAuthContext", () => {
         class_id: "class-1",
         guest_role: "teacher",
         status: "active",
+        expires_at: "2026-03-27T08:00:00.000Z",
+        last_seen_at: "2026-03-27T00:00:00.000Z",
       },
     });
 
@@ -114,6 +127,7 @@ describe("getAuthContext", () => {
     expect(context.user?.id).toBe("anon-1");
     expect(context.isGuest).toBe(true);
     expect(context.guestSessionError).toBeNull();
+    expect(context.guestSessionExpired).toBe(false);
     expect(context.sandboxId).toBe("sandbox-1");
     expect(context.guestRole).toBe("teacher");
     expect(context.guestClassId).toBe("class-1");
@@ -136,6 +150,7 @@ describe("getAuthContext", () => {
     expect(context.user?.id).toBe("anon-2");
     expect(context.isGuest).toBe(false);
     expect(context.guestSessionError).toBeNull();
+    expect(context.guestSessionExpired).toBe(false);
     expect(context.sandboxId).toBeNull();
     expect(context.guestRole).toBeNull();
   });
@@ -176,6 +191,41 @@ describe("getAuthContext", () => {
     expect(context.guestSessionError).toBe(
       "We couldn't verify your guest session right now. Please try again.",
     );
+    expect(context.guestSessionExpired).toBe(false);
     expect(context.sandboxId).toBeNull();
+  });
+
+  it("expires stale guest sandboxes in auth context", async () => {
+    const supabase = mockSupabase({
+      sessionUser: {
+        id: "anon-4",
+        email: null,
+        email_confirmed_at: null,
+        is_anonymous: true,
+        app_metadata: { provider: "anonymous" },
+      },
+      sandbox: {
+        id: "sandbox-expired",
+        class_id: "class-1",
+        guest_role: "teacher",
+        status: "active",
+        expires_at: "2026-03-26T23:59:59.000Z",
+        last_seen_at: "2026-03-27T00:00:00.000Z",
+      },
+    });
+
+    const context = await getAuthContext();
+
+    expect(context.isGuest).toBe(false);
+    expect(context.guestSessionExpired).toBe(true);
+    expect(context.guestSessionError).toBe(
+      "Your guest session has expired. Start a new guest session to continue.",
+    );
+    expect(supabase.from).toHaveBeenCalledWith("guest_sandboxes");
+    const guestBuilder = supabase.from.mock.results[1]?.value as {
+      update: ReturnType<typeof vi.fn>;
+    };
+    expect(guestBuilder.update).toHaveBeenCalledWith({ status: "expired" });
+    expect(supabase.auth.signOut).toHaveBeenCalled();
   });
 });

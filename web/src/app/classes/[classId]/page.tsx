@@ -334,9 +334,9 @@ export default async function ClassOverviewPage({
     resolvedSearchParams?.uploaded === "processing"
       ? "Material uploaded. Processing will complete shortly."
       : resolvedSearchParams?.uploaded === "ready"
-        ? "Material uploaded. It is ready to use in guest mode."
-      : resolvedSearchParams?.uploaded === "failed"
-        ? "Material uploaded, but extraction failed."
+        ? "Material uploaded. It is ready to use."
+        : resolvedSearchParams?.uploaded === "failed"
+          ? "Material uploaded, but extraction failed."
         : null;
 
   if (!isTeacher) {
