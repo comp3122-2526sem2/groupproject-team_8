@@ -36,7 +36,6 @@ type AuthCopy = {
   eyebrow: string;
   title: string;
   description: string;
-  supportNote?: string;
   footerLabel: string;
   footerMode: AuthMode;
   footerLinkLabel: string;
@@ -48,7 +47,6 @@ const AUTH_COPY: Record<AuthMode, AuthCopy> = {
     title: "Welcome back",
     description:
       "Sign in to manage classes, review AI outputs, and keep every student workflow grounded in your blueprint.",
-    supportNote: undefined,
     footerLabel: "New here?",
     footerMode: "sign-up",
     footerLinkLabel: "Create an account",
@@ -58,8 +56,6 @@ const AUTH_COPY: Record<AuthMode, AuthCopy> = {
     title: "Create an account",
     description:
       "Start with one editable blueprint, then publish clear, auditable AI learning experiences for teachers and students.",
-    supportNote:
-      "Pick the role that matches how you’ll use the platform. This is the one setup choice that shapes your workspace.",
     footerLabel: "Already have an account?",
     footerMode: "sign-in",
     footerLinkLabel: "Sign in",
@@ -69,7 +65,6 @@ const AUTH_COPY: Record<AuthMode, AuthCopy> = {
     title: "Reset your password",
     description:
       "We will email a secure recovery link so you can get back into your workspace without losing momentum.",
-    supportNote: undefined,
     footerLabel: "Remembered your password?",
     footerMode: "sign-in",
     footerLinkLabel: "Back to sign in",
@@ -131,7 +126,11 @@ export default function AuthSurface({
   const defaultEmail =
     typeof searchParams?.email === "string" ? searchParams.email : "";
   const defaultAccountType =
-    searchParams?.account_type === "student" ? "student" : "teacher";
+    searchParams?.account_type === "student"
+      ? "student"
+      : searchParams?.account_type === "teacher"
+        ? "teacher"
+        : null;
   const { authReturnTo, authSuccessTo } = getHiddenRedirectFields(mode, presentation);
   const footerHref = getFooterHref(mode, presentation);
   const supportHref = getSupportHref(mode, presentation);
@@ -182,11 +181,16 @@ export default function AuthSurface({
   ) : null;
 
   return (
-    <section className="auth-surface relative overflow-hidden rounded-[2rem] border border-default px-5 py-5 sm:px-7 sm:py-7">
+    <section
+      className={[
+        "auth-surface relative rounded-[2rem] border border-default px-5 py-5 sm:px-7 sm:py-6",
+        presentation === "modal" ? "auth-surface-modal" : "",
+      ].join(" ")}
+    >
       <div className="auth-surface-orb" aria-hidden="true" />
       <div className="relative">
         <div className="flex items-start justify-between gap-4">
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div className="inline-flex items-center gap-3">
               <span className="auth-mark flex h-11 w-11 items-center justify-center rounded-2xl text-white shadow-sm">
                 <BrandMark className="h-5 w-5" />
@@ -198,16 +202,13 @@ export default function AuthSurface({
                 <p className="text-sm font-medium text-ui-muted">Learning Platform</p>
               </div>
             </div>
-            <div className="max-w-[32rem] space-y-2">
+            <div className="max-w-[30rem] space-y-2">
               <h1 className="editorial-title text-3xl leading-tight text-ui-primary sm:text-[2.4rem]">
                 {copy.title}
               </h1>
               <p className="max-w-[34ch] text-sm leading-6 text-ui-muted sm:text-[15px]">
                 {copy.description}
               </p>
-              {copy.supportNote ? (
-                <p className="max-w-[38ch] text-sm leading-6 text-ui-subtle">{copy.supportNote}</p>
-              ) : null}
             </div>
           </div>
 
@@ -219,7 +220,7 @@ export default function AuthSurface({
           ) : null}
         </div>
 
-        <div className="mt-6 border-t border-default pt-5">
+        <div className="mt-5 border-t border-default pt-4">
           {renderLoginFeedback}
           {renderSignUpFeedback}
           {renderForgotFeedback}

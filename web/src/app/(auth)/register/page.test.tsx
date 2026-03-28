@@ -8,10 +8,9 @@ describe("RegisterPage", () => {
 
     expect(html).toContain("Create an account");
     expect(html).toContain("Account type");
-    expect(html).toContain("Account type can");
+    expect(html).toContain("Choose the role that matches");
     expect(html).toContain("Teacher");
     expect(html).toContain("Student");
-    expect(html).toContain("Teacher accounts create classes");
     expect(html).toContain("Email");
     expect(html).toContain("Password");
     expect(html).toContain("Show password");

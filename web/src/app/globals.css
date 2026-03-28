@@ -416,13 +416,11 @@ body[data-auth-modal-open="true"] .home-hero-frame {
 }
 
 .auth-surface {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(250, 247, 241, 0.96) 100%),
-    radial-gradient(circle at top right, rgba(74, 95, 132, 0.12), transparent 42%);
+  background: color-mix(in srgb, var(--surface-card) 92%, #ffffff 8%);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.8) inset,
-    0 22px 60px rgba(20, 20, 19, 0.08);
-  backdrop-filter: blur(18px);
+    0 20px 48px rgba(20, 20, 19, 0.08);
+  backdrop-filter: blur(14px);
 }
 
 .auth-surface-orb {
@@ -432,18 +430,16 @@ body[data-auth-modal-open="true"] .home-hero-frame {
   width: 220px;
   border-radius: 9999px;
   background:
-    radial-gradient(circle, rgba(74, 95, 132, 0.18) 0%, rgba(74, 95, 132, 0.04) 42%, transparent 72%);
+    radial-gradient(circle, rgba(74, 95, 132, 0.12) 0%, rgba(74, 95, 132, 0.03) 42%, transparent 72%);
   pointer-events: none;
 }
 
 .auth-mark {
-  background:
-    linear-gradient(135deg, rgba(74, 95, 132, 1) 0%, rgba(192, 106, 79, 1) 100%);
+  background: color-mix(in srgb, rgba(74, 95, 132, 1) 58%, rgba(192, 106, 79, 1) 42%);
 }
 
 .auth-choice {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(247, 242, 235, 0.9) 100%);
+  background: rgba(255, 255, 255, 0.78);
   transition:
     transform var(--motion-standard) cubic-bezier(0.25, 0.46, 0.45, 0.94),
     border-color var(--motion-fast) ease,
@@ -459,15 +455,10 @@ body[data-auth-modal-open="true"] .home-hero-frame {
 
 .auth-choice-active {
   border-color: color-mix(in srgb, var(--accent-primary) 42%, #ffffff);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--accent-soft) 62%, #ffffff) 0%,
-      rgba(255, 255, 255, 0.98) 100%
-    );
+  background: color-mix(in srgb, var(--accent-soft) 26%, #ffffff 74%);
   box-shadow:
-    0 0 0 1px rgba(192, 106, 79, 0.08) inset,
-    0 12px 28px rgba(192, 106, 79, 0.1);
+    0 0 0 1px rgba(192, 106, 79, 0.06) inset,
+    0 10px 24px rgba(20, 20, 19, 0.05);
 }
 
 .auth-choice:hover,
@@ -487,20 +478,15 @@ body[data-auth-modal-open="true"] .home-hero-frame {
 
 .auth-choice-indicator-idle {
   border-color: rgba(200, 190, 171, 0.75);
-  background: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.96);
   color: transparent;
 }
 
 .auth-choice-indicator-active {
   border-color: color-mix(in srgb, var(--accent-primary) 45%, #ffffff);
-  background: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 82%, #ffffff 18%);
   color: var(--accent-foreground-strong);
   transform: scale(1.02);
-}
-
-.auth-choice-hint {
-  border: 1px solid rgba(200, 190, 171, 0.45);
-  background: rgba(255, 255, 255, 0.64);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 type AccountType = "teacher" | "student";
 
 type AccountTypeSelectorProps = {
-  defaultValue: AccountType;
+  defaultValue: AccountType | null;
 };
 
 const ROLE_CONTENT: Record<
@@ -15,33 +15,32 @@ const ROLE_CONTENT: Record<
   {
     label: string;
     badge: string;
-    description: string;
     helper: string;
   }
 > = {
   teacher: {
     label: "Teacher",
     badge: "Manage",
-    description: "Upload materials, shape the blueprint, and publish class activities.",
-    helper: "Teacher accounts create classes, curate AI outputs, and assign learning work.",
+    helper: "Teacher accounts create classes, curate AI outputs, and publish learning activities.",
   },
   student: {
     label: "Student",
     badge: "Learn",
-    description: "Join classes, open assigned activities, and study inside the published flow.",
-    helper: "Student accounts join teacher-led classes and work through assigned activities.",
+    helper: "Student accounts join teacher-led classes and open assigned learning activities.",
   },
 };
 
+const DEFAULT_HELPER =
+  "Choose the role that matches how you'll use the platform. Account type can't be changed later.";
+
 export default function AccountTypeSelector({ defaultValue }: AccountTypeSelectorProps) {
-  const [selected, setSelected] = useState<AccountType>(defaultValue);
+  const [selected, setSelected] = useState<AccountType | null>(defaultValue);
+  const helperText = selected ? ROLE_CONTENT[selected].helper : DEFAULT_HELPER;
 
   return (
-    <fieldset className="space-y-3">
+    <fieldset className="space-y-2.5">
       <legend className="text-sm font-medium text-ui-muted">Account type</legend>
-      <p className="text-xs leading-5 text-ui-muted">
-        Choose how you&apos;ll use the platform. Account type can&apos;t be changed after signup.
-      </p>
+      <p className="text-xs leading-5 text-ui-muted">{helperText}</p>
 
       <div className="grid grid-cols-2 gap-3">
         {(Object.entries(ROLE_CONTENT) as [AccountType, (typeof ROLE_CONTENT)[AccountType]][]).map(
@@ -61,22 +60,12 @@ export default function AccountTypeSelector({ defaultValue }: AccountTypeSelecto
                 />
                 <span
                   className={cn(
-                    "auth-choice flex min-h-[5.5rem] flex-col justify-between rounded-2xl border px-4 py-3 text-left",
+                    "auth-choice flex min-h-[4.25rem] flex-col justify-between rounded-2xl border px-4 py-3 text-left",
                     isSelected ? "auth-choice-active" : "auth-choice-idle",
                   )}
                 >
-                  <span className="flex items-start justify-between gap-3">
-                    <span>
-                      <span className="block text-sm font-semibold text-ui-primary">{content.label}</span>
-                      <span
-                        className={cn(
-                          "mt-1 block text-xs leading-5",
-                          isSelected ? "text-ui-primary" : "text-ui-muted",
-                        )}
-                      >
-                        {content.description}
-                      </span>
-                    </span>
+                  <span className="flex items-center justify-between gap-3">
+                    <span className="block text-sm font-semibold text-ui-primary">{content.label}</span>
                     <span
                       className={cn(
                         "auth-choice-indicator flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
@@ -89,8 +78,8 @@ export default function AccountTypeSelector({ defaultValue }: AccountTypeSelecto
                   </span>
                   <span
                     className={cn(
-                      "mt-3 text-[11px] font-semibold uppercase tracking-[0.18em]",
-                      isSelected ? "text-accent-strong" : "text-ui-subtle",
+                      "mt-2 text-[11px] font-semibold uppercase tracking-[0.18em]",
+                      isSelected ? "text-accent-strong" : "text-ui-muted",
                     )}
                   >
                     {content.badge}
@@ -101,10 +90,6 @@ export default function AccountTypeSelector({ defaultValue }: AccountTypeSelecto
           },
         )}
       </div>
-
-      <p className="auth-choice-hint rounded-2xl px-4 py-3 text-sm leading-6 text-ui-muted">
-        {ROLE_CONTENT[selected].helper}
-      </p>
     </fieldset>
   );
 }
