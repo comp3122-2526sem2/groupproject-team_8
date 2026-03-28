@@ -4,7 +4,7 @@
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="x-apple-disable-message-reformatting" />
-    <title>Confirmation email preview</title>
+    <title>Reset your STEM Learning Platform password</title>
   </head>
   <body
     style="
@@ -24,7 +24,7 @@
         mso-hide: all;
       "
     >
-      Confirm your email to activate your STEM Learning Platform workspace.
+      Reset your STEM Learning Platform password.
     </div>
 
     <table
@@ -101,7 +101,7 @@
                               padding: 0 0 14px 0;
                             "
                           >
-                            Verify your email
+                            Reset your password
                           </td>
                         </tr>
                         <tr>
@@ -113,13 +113,13 @@
                               padding: 0 0 28px 0;
                             "
                           >
-                            Welcome to STEM Learning Platform. Confirm your email to activate your account and enter your workspace.
+                            We received a request to reset the password for your STEM Learning Platform account. If you didn't request this, you can safely ignore this email.
                           </td>
                         </tr>
                         <tr>
                           <td style="padding: 0 0 24px 0">
                             <a
-                              href="https://ai-stem-learning-platform-group-8.vercel.app/auth/confirm?token_hash=preview-token-hash&type=email&next=/login&email=preview@student-platform.test"
+                              href="{{ if .RedirectTo }}{{ .RedirectTo }}{{ else }}{{ .SiteURL }}{{ end }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&email={{ .Email }}"
                               style="
                                 display: inline-block;
                                 padding: 14px 26px;
@@ -133,7 +133,7 @@
                                 font-weight: 600;
                               "
                             >
-                              Confirm your email
+                              Set a new password
                             </a>
                           </td>
                         </tr>
@@ -149,7 +149,7 @@
                             If the button does not open, copy this link into your browser:
                             <br />
                             <span style="word-break: break-all; color: #8b4631">
-                              https://ai-stem-learning-platform-group-8.vercel.app/auth/confirm?token_hash=preview-token-hash&type=email&next=/login&email=preview@student-platform.test
+                              {{ if .RedirectTo }}{{ .RedirectTo }}{{ else }}{{ .SiteURL }}{{ end }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&email={{ .Email }}
                             </span>
                           </td>
                         </tr>
@@ -196,7 +196,7 @@
                                     <tr>
                                       <td align="center" valign="middle" style="padding: 0 10px 0 0">
                                         <img
-                                          src="../../web/public/email/supabase-wordmark-light.png"
+                                          src="{{ .SiteURL }}/email/supabase-wordmark-light.png"
                                           alt="Supabase"
                                           width="78"
                                           style="display: block; width: 78px; height: auto; border: 0"
@@ -204,7 +204,7 @@
                                       </td>
                                       <td align="center" valign="middle" style="padding: 0 10px">
                                         <img
-                                          src="../../web/public/email/vercel-logotype-light.png"
+                                          src="{{ .SiteURL }}/email/vercel-logotype-light.png"
                                           alt="Vercel"
                                           width="68"
                                           style="display: block; width: 68px; height: auto; border: 0"
@@ -212,7 +212,7 @@
                                       </td>
                                       <td align="center" valign="middle" style="padding: 0 0 0 10px">
                                         <img
-                                          src="../../web/public/email/polyu-logo.png"
+                                          src="{{ .SiteURL }}/email/polyu-logo.png"
                                           alt="The Hong Kong Polytechnic University"
                                           width="22"
                                           style="display: block; width: 22px; height: auto; border: 0"
@@ -241,7 +241,7 @@
                   text-align: center;
                 "
               >
-                This verification email was requested for preview@student-platform.test.
+                This password reset was requested for {{ .Email }}.
               </td>
             </tr>
           </table>
