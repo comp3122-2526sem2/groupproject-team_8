@@ -35,7 +35,7 @@ type AuthSurfaceProps = {
 type AuthCopy = {
   eyebrow: string;
   title: string;
-  description: string;
+  description?: string;
   footerLabel: string;
   footerMode: AuthMode;
   footerLinkLabel: string;
@@ -54,8 +54,6 @@ const AUTH_COPY: Record<AuthMode, AuthCopy> = {
   "sign-up": {
     eyebrow: "Launch Your Class",
     title: "Create an account",
-    description:
-      "Start with one editable blueprint, then publish clear, auditable AI learning experiences for teachers and students.",
     footerLabel: "Already have an account?",
     footerMode: "sign-in",
     footerLinkLabel: "Sign in",
@@ -206,9 +204,11 @@ export default function AuthSurface({
               <h1 className="editorial-title text-3xl leading-tight text-ui-primary sm:text-[2.4rem]">
                 {copy.title}
               </h1>
-              <p className="max-w-[34ch] text-sm leading-6 text-ui-muted sm:text-[15px]">
-                {copy.description}
-              </p>
+              {copy.description ? (
+                <p className="max-w-[34ch] text-sm leading-6 text-ui-muted sm:text-[15px]">
+                  {copy.description}
+                </p>
+              ) : null}
             </div>
           </div>
 
