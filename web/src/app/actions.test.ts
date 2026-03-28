@@ -382,6 +382,20 @@ describe("auth actions", () => {
     });
   });
 
+  it("preserves account_type in the redirect after confirmation resend", async () => {
+    process.env.NEXT_PUBLIC_SITE_URL = "https://ai-stem-learning-platform-group-8.vercel.app";
+    supabaseAuth.resend.mockResolvedValueOnce({ error: null });
+
+    const formData = new FormData();
+    formData.set("email", "teacher@example.com");
+    formData.set("auth_return_to", "/register?account_type=teacher");
+
+    await expectRedirect(
+      () => resendConfirmationEmail(formData),
+      /;\/register\?account_type=teacher&email=teacher%40example\.com&resend=confirmation&resend_started_at=\d+&verify=1;/,
+    );
+  });
+
   it("returns confirmation resend errors to the register surface", async () => {
     supabaseAuth.resend.mockResolvedValueOnce({ error: { message: "Too many requests" } });
 

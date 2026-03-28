@@ -79,7 +79,7 @@ function buildResendStateParams(input: {
   resendStartedAt?: string | null;
 }) {
   return {
-    account_type: input.accountType ?? null,
+    ...(input.accountType !== undefined ? { account_type: input.accountType } : {}),
     email: input.email ?? null,
     error: input.error ?? null,
     resend: input.flow,
