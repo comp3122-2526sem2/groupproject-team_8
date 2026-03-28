@@ -19,6 +19,7 @@ function redirectSettings(
   section: "profile" | "password",
   status: "success" | "error",
   message?: string,
+  step?: string,
 ) {
   const search = new URLSearchParams({
     section,
@@ -26,6 +27,9 @@ function redirectSettings(
   });
   if (message) {
     search.set("message", message);
+  }
+  if (step) {
+    search.set("step", step);
   }
   redirect(`/settings?${search.toString()}`);
 }
@@ -58,23 +62,11 @@ export async function updateDisplayName(formData: FormData) {
   redirectSettings("profile", "success", "Display name updated.");
 }
 
-export async function changePassword(formData: FormData) {
+export async function verifyAndSendOtp(formData: FormData) {
   const currentPassword = getFormValue(formData, "current_password");
-  const newPassword = getFormValue(formData, "new_password");
-  const confirmPassword = getFormValue(formData, "confirm_password");
 
   if (!currentPassword) {
     redirectSettings("password", "error", "Enter your current password.");
-  }
-  const passwordValidation = validatePasswordPolicy(newPassword);
-  if (!passwordValidation.ok) {
-    redirectSettings("password", "error", passwordValidation.message);
-  }
-  if (newPassword !== confirmPassword) {
-    redirectSettings("password", "error", "New password confirmation does not match.");
-  }
-  if (newPassword === currentPassword) {
-    redirectSettings("password", "error", "New password must be different from current password.");
   }
 
   const supabase = await createServerSupabaseClient();
@@ -94,9 +86,47 @@ export async function changePassword(formData: FormData) {
     redirectSettings("password", "error", "Current password is incorrect.");
   }
 
-  const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
-  if (updateError) {
-    redirectSettings("password", "error", updateError.message);
+  const { error: reauthError } = await supabase.auth.reauthenticate();
+  if (reauthError) {
+    redirectSettings("password", "error", reauthError.message);
+  }
+
+  redirectSettings("password", "success", "Verification code sent to your email.", "otp");
+}
+
+export async function changePasswordWithOtp(formData: FormData) {
+  const otp = getFormValue(formData, "otp");
+  const newPassword = getFormValue(formData, "new_password");
+  const confirmPassword = getFormValue(formData, "confirm_password");
+
+  if (!otp || otp.length < 6) {
+    redirectSettings("password", "error", "Enter the 6-digit verification code.", "otp");
+  }
+
+  const passwordValidation = validatePasswordPolicy(newPassword);
+  if (!passwordValidation.ok) {
+    redirectSettings("password", "error", passwordValidation.message, "otp");
+  }
+
+  if (newPassword !== confirmPassword) {
+    redirectSettings("password", "error", "New password confirmation does not match.", "otp");
+  }
+
+  const supabase = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  const { error } = await supabase.auth.updateUser({
+    password: newPassword,
+    nonce: otp,
+  });
+  if (error) {
+    redirectSettings("password", "error", error.message, "otp");
   }
 
   redirectSettings("password", "success", "Password changed successfully.");
