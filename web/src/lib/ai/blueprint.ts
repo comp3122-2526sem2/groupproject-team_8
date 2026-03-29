@@ -55,6 +55,7 @@ export type BlueprintQualityRubric = {
   notes?: string[];
 };
 
+/** Top-level structure of a blueprint JSON payload (schema v2). */
 export type BlueprintPayload = {
   schemaVersion?: string;
   summary: string;
@@ -64,6 +65,23 @@ export type BlueprintPayload = {
   topics: BlueprintTopic[];
 };
 
+/**
+ * Builds the system + user prompt pair sent to the AI provider when generating
+ * a new blueprint from uploaded class materials.
+ *
+ * The system prompt instructs the model to act as a STEM curriculum designer
+ * and constrains it to the provided materials (no hallucination).  The user
+ * prompt embeds the full JSON schema the model must return so it never has to
+ * guess the expected shape.
+ *
+ * @param input.classTitle     Display name of the class (e.g., "AP Physics 1").
+ * @param input.subject        Subject area; defaults to "STEM" if absent.
+ * @param input.level          Academic level; defaults to "Mixed high school/college".
+ * @param input.materialCount  Number of uploaded materials (included for the
+ *                             model's awareness of evidence breadth).
+ * @param input.materialText   Pre-rendered material text from the retrieval layer.
+ * @returns  `{ system, user }` ready to pass to the AI provider.
+ */
 export function buildBlueprintPrompt(input: {
   classTitle: string;
   subject?: string | null;
@@ -138,6 +156,21 @@ export function buildBlueprintPrompt(input: {
   return { system, user };
 }
 
+/**
+ * Parses the raw string returned by the AI provider into a validated
+ * `BlueprintPayload`.
+ *
+ * Orchestrates the three-stage pipeline:
+ * 1. JSON extraction (tolerates markdown wrappers and prose preambles).
+ * 2. JSON repair (handles curly quotes and trailing commas from AI output).
+ * 3. Schema validation (enforces shape, sequences, DAG constraints, etc.).
+ *
+ * Throws on any validation failure so callers can surface a clear error rather
+ * than silently storing a malformed blueprint.
+ *
+ * @param raw  The raw string content from the AI response.
+ * @returns    A validated and sanitized `BlueprintPayload`.
+ */
 export function parseBlueprintResponse(raw: string): BlueprintPayload {
   const jsonText = extractJsonWithFallback(raw);
   const parsed = parseJsonWithRepair(jsonText);
@@ -148,6 +181,29 @@ export function parseBlueprintResponse(raw: string): BlueprintPayload {
   return validation.value;
 }
 
+/**
+ * Validates and sanitizes an unknown value as a `BlueprintPayload`.
+ *
+ * Returns a discriminated union: `{ ok: true, value }` on success or
+ * `{ ok: false, errors }` listing all violations (not just the first).
+ * Collecting all errors at once is intentional — it lets the caller surface
+ * a complete picture to the teacher rather than requiring repeated fix-and-retry.
+ *
+ * Validation checks (in order):
+ * - Schema version (must be in `SUPPORTED_BLUEPRINT_SCHEMA_VERSIONS` if provided)
+ * - `summary` (required non-empty string)
+ * - `assumptions`, `uncertaintyNotes` (optional; non-empty strings when present)
+ * - `qualityRubric` (optional; all three coverage fields must be low|medium|high)
+ * - `topics` (non-empty array; per-topic: key, title, sequence, objectives,
+ *   assessmentIdeas, prerequisites, evidence)
+ * - Contiguous sequence invariant: sequences must be 1, 2, 3, … without gaps
+ * - DAG invariant: prerequisite links must not form a cycle
+ * - Near-duplicate detection: normalised topic titles and objective statements
+ *   must be unique
+ *
+ * @param payload  The unknown value to validate (typically `JSON.parse` output).
+ * @returns        A discriminated union with the validated value or error list.
+ */
 export function validateBlueprintPayload(
   payload: unknown,
 ): { ok: true; errors: string[]; value: BlueprintPayload } | { ok: false; errors: string[] } {
@@ -177,6 +233,10 @@ export function validateBlueprintPayload(
   }
   const sanitizedTopics: BlueprintTopic[] = [];
   const topicKeys = new Set<string>();
+  // Normalised titles are tracked to detect near-duplicate topics.
+  // "Near-duplicate" means two titles that collapse to the same string after
+  // lower-casing, stripping punctuation, and collapsing whitespace — e.g.,
+  // "Newton's Laws" and "newtons laws" would be flagged.
   const normalizedTopicTitles = new Set<string>();
   const seenSequences = new Set<number>();
 
@@ -262,6 +322,11 @@ export function validateBlueprintPayload(
       });
     });
 
+    // --- Contiguous sequence validation ---
+    // Sort the collected sequence numbers and verify they form 1, 2, 3, … with
+    // no gaps.  A gap (e.g., 1, 2, 4) means a topic is missing from the middle,
+    // which breaks curriculum ordering assumptions downstream (e.g., prerequisite
+    // resolution and student progress tracking).
     const sortedSequences = [...seenSequences].sort((a, b) => a - b);
     for (let index = 0; index < sortedSequences.length; index += 1) {
       if (sortedSequences[index] !== index + 1) {
@@ -270,6 +335,18 @@ export function validateBlueprintPayload(
       }
     }
 
+    // --- DAG cycle detection via DFS ---
+    // Build an adjacency list of topic key → prerequisite keys, then run a
+    // depth-first search using two sets:
+    //
+    // - `visiting`: nodes currently on the DFS call stack (grey nodes in the
+    //   standard 3-color DFS algorithm).  If we encounter a node already in
+    //   `visiting`, we have found a back-edge → cycle.
+    //
+    // - `visited`: nodes whose entire subtree has been explored (black nodes).
+    //   Skipping these avoids re-processing in dense graphs.
+    //
+    // The outer loop ensures every disconnected component is visited.
     const keySet = new Set(sanitizedTopics.map((topic) => topic.key));
     const graph = new Map<string, string[]>();
     sanitizedTopics.forEach((topic, index) => {
@@ -303,6 +380,8 @@ export function validateBlueprintPayload(
       assumptions,
       uncertaintyNotes,
       qualityRubric,
+      // Re-sort by sequence so the output order is canonical regardless of the
+      // order the AI emitted the topics.
       topics: sanitizedTopics.sort((a, b) => a.sequence - b.sequence),
     },
   };
@@ -318,6 +397,8 @@ function sanitizeObjectives(
     return [];
   }
 
+  // Track normalised objective statements to detect near-duplicate objectives
+  // within the same topic (same rule as topic title deduplication).
   const normalizedObjectiveStatements = new Set<string>();
   const objectives: BlueprintObjective[] = [];
   raw.forEach((objective, objectiveIndex) => {
@@ -482,6 +563,10 @@ function sanitizeStringArray(value: unknown): string[] {
     .filter((item, index, array) => item.length > 0 && array.indexOf(item) === index);
 }
 
+/**
+ * Attempts to parse `jsonText` as JSON; on failure runs `repairJson` and
+ * retries once.  Throws only if both attempts fail.
+ */
 function parseJsonWithRepair(jsonText: string): unknown {
   try {
     return JSON.parse(jsonText);
@@ -495,6 +580,20 @@ function parseJsonWithRepair(jsonText: string): unknown {
   }
 }
 
+/**
+ * Applies lightweight heuristic repairs to malformed JSON from AI output.
+ *
+ * - **Curly quote replacement**: AI models (and their training data) sometimes
+ *   emit Unicode "smart quotes" (" " ' ') instead of straight ASCII quotes.
+ *   JSON.parse rejects these, so we normalise them before parsing.
+ *
+ * - **Trailing comma removal**: Some models output `[...,]` or `{...,}` which
+ *   is valid JavaScript but invalid JSON.  The regex strips the trailing comma
+ *   before the closing bracket/brace.
+ *
+ * @param input  Potentially malformed JSON string from AI output.
+ * @returns      Repaired string (may still be invalid JSON if damage is severe).
+ */
 function repairJson(input: string) {
   return input
     .replace(/[“”]/g, '"')
@@ -503,15 +602,35 @@ function repairJson(input: string) {
     .trim();
 }
 
+/**
+ * Detects cycles in a directed prerequisite graph using iterative DFS.
+ *
+ * Uses the standard 3-colour DFS algorithm:
+ *
+ * - **`visiting`** (grey): nodes currently on the active call stack.
+ *   If the DFS reaches a grey node, it found a back-edge — a cycle.
+ *
+ * - **`visited`** (black): nodes whose entire reachable subgraph has been
+ *   fully explored.  Revisiting them would not reveal new cycles, so they are
+ *   skipped for efficiency.
+ *
+ * The outer `for` loop over `graph.keys()` ensures that disconnected
+ * components (topics with no prerequisites) are also visited.
+ *
+ * @param graph  Adjacency list: topic key → array of prerequisite topic keys.
+ * @returns      `true` if a cycle exists; `false` if the graph is acyclic.
+ */
 function hasCycle(graph: Map<string, string[]>) {
   const visiting = new Set<string>();
   const visited = new Set<string>();
 
   const visit = (node: string): boolean => {
     if (visiting.has(node)) {
+      // Back-edge detected — node is an ancestor of itself.
       return true;
     }
     if (visited.has(node)) {
+      // Already fully explored; no cycle reachable from here.
       return false;
     }
     visiting.add(node);
@@ -521,6 +640,7 @@ function hasCycle(graph: Map<string, string[]>) {
         return true;
       }
     }
+    // All descendants explored with no cycle — move node from grey to black.
     visiting.delete(node);
     visited.add(node);
     return false;
@@ -534,6 +654,14 @@ function hasCycle(graph: Map<string, string[]>) {
   return false;
 }
 
+/**
+ * Normalises a string for near-duplicate comparison.
+ *
+ * Lower-cases the text, replaces all non-alphanumeric characters (including
+ * punctuation and accents) with spaces, then collapses runs of whitespace.
+ * This means "Newton's Second Law" and "newtons second law" produce the same
+ * fingerprint and are detected as duplicates.
+ */
 function normalizeText(value: string) {
   return value
     .toLowerCase()
@@ -549,6 +677,14 @@ function wordCount(value: string) {
   return value.trim().split(/\s+/).length;
 }
 
+/**
+ * Extracts a single JSON object from the AI response string using the shared
+ * `extractSingleJsonObject` utility (which handles brace-balanced scanning).
+ *
+ * Throws with a distinct message if zero objects are found (to distinguish
+ * "no JSON at all" from "malformed JSON") or if multiple top-level objects
+ * are found (which would indicate the model returned multiple responses).
+ */
 function extractJson(raw: string) {
   return extractSingleJsonObject(raw, {
     notFoundMessage: NO_JSON_OBJECT_FOUND_MESSAGE,
@@ -556,6 +692,26 @@ function extractJson(raw: string) {
   });
 }
 
+/**
+ * Two-pass JSON extraction strategy for AI-generated blueprint responses.
+ *
+ * **Pass 1** (`extractJson`): Uses brace-balanced scanning to find and extract
+ * a single JSON object, even when the model wraps it in prose or markdown
+ * code fences.  This handles the normal case.
+ *
+ * **Pass 2** (fallback): If pass 1 throws a "No JSON object found" error, the
+ * response might be a bare JSON string with no identifiable object boundary.
+ * We check whether the trimmed raw string starts with `{` and ends with `}`;
+ * if so we treat the whole string as the JSON object.  This handles edge cases
+ * where the extraction heuristic fails on extremely minimal responses.
+ *
+ * Any other error from pass 1 (e.g., "Multiple JSON objects") is re-thrown
+ * immediately because it represents a structural problem that the fallback
+ * cannot resolve.
+ *
+ * @param raw  The raw string from the AI provider.
+ * @returns    A JSON string ready for `JSON.parse`.
+ */
 function extractJsonWithFallback(raw: string) {
   try {
     return extractJson(raw);
@@ -571,6 +727,11 @@ function extractJsonWithFallback(raw: string) {
   }
 }
 
+/**
+ * Resolves the effective schema version from the environment variable,
+ * falling back to `DEFAULT_FALLBACK_SCHEMA_VERSION` if the env value is
+ * not in the supported set.
+ */
 function resolveSchemaVersionDefault() {
   const normalized = DEFAULT_BLUEPRINT_SCHEMA_VERSION.trim().toLowerCase();
   return SUPPORTED_BLUEPRINT_SCHEMA_VERSIONS.has(normalized)

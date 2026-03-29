@@ -1,6 +1,18 @@
 import type { ActivityType, AssignmentContext } from "@/lib/activities/types";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+/**
+ * Looks up the highest-version published blueprint for a class and returns its
+ * id.
+ *
+ * Throws if no published blueprint exists so callers can surface a clear
+ * "publish a blueprint first" error rather than silently creating an assignment
+ * with a null blueprint reference.
+ *
+ * @param supabase  A server-side Supabase client (already authenticated).
+ * @param classId   UUID of the class to look up the blueprint for.
+ * @returns         The published blueprint's UUID.
+ */
 export async function requirePublishedBlueprintId(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
   classId: string,
@@ -25,6 +37,40 @@ export async function requirePublishedBlueprintId(
   return publishedBlueprint.id;
 }
 
+/**
+ * Creates an assignment for all currently enrolled students in a class.
+ *
+ * **Why a manual rollback closure instead of a DB transaction?**
+ * Supabase's PostgREST client does not expose explicit transaction control.
+ * Instead, we perform a manual two-phase write (assignment row first, then
+ * recipient rows) and capture a rollback closure immediately after the first
+ * write succeeds.  If the second write fails, the closure deletes the orphaned
+ * assignment row so the DB is left in a consistent state.
+ *
+ * The closure pattern is used (rather than a flag at the call site) because
+ * the rollback needs to close over the freshly generated `assignment.id`
+ * returned by the insert — a value that only exists after the first DB call
+ * and is not available to the outer scope before the insert completes.
+ *
+ * **Write sequencing:**
+ * 1. Insert the `assignments` row — this is the authoritative record of the
+ *    assignment; students will not see it until the `assignment_recipients`
+ *    rows exist.
+ * 2. Fetch enrolled students.
+ * 3. Insert `assignment_recipients` rows — one per student.
+ *
+ * If step 3 fails after step 1 has committed, `rollbackAssignment` deletes
+ * the `assignments` row.  Note: if the rollback itself fails, the combined
+ * error message surfaces both failure causes so an operator can clean up
+ * manually.
+ *
+ * @param input.supabase     Server-side Supabase client.
+ * @param input.classId      UUID of the target class.
+ * @param input.activityId   UUID of the activity being assigned.
+ * @param input.teacherId    UUID of the teacher creating the assignment.
+ * @param input.dueAt        Optional ISO-8601 due date, or null for no due date.
+ * @returns                  The newly created assignment's UUID.
+ */
 export async function createWholeClassAssignment(input: {
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
   classId: string;
@@ -32,6 +78,8 @@ export async function createWholeClassAssignment(input: {
   teacherId: string;
   dueAt: string | null;
 }) {
+  // --- Assignment insert ---
+
   const { data: assignment, error: assignmentError } = await input.supabase
     .from("assignments")
     .insert({
@@ -47,6 +95,10 @@ export async function createWholeClassAssignment(input: {
     throw new Error(assignmentError?.message ?? "Failed to create assignment.");
   }
 
+  // --- Rollback registration ---
+  // Capture assignment.id in a closure so the rollback can delete exactly
+  // this row if a subsequent step fails.  The class_id filter is a belt-and-
+  // suspenders guard against deleting rows in a different class.
   const rollbackAssignment = async () => {
     const { error } = await input.supabase
       .from("assignments")
@@ -57,6 +109,8 @@ export async function createWholeClassAssignment(input: {
     return error;
   };
 
+  // --- Fetch enrolled students ---
+
   const { data: students, error: studentsError } = await input.supabase
     .from("enrollments")
     .select("user_id")
@@ -64,6 +118,7 @@ export async function createWholeClassAssignment(input: {
     .eq("role", "student");
 
   if (studentsError) {
+    // The assignment row exists but we can't fetch recipients — roll it back.
     const rollbackError = await rollbackAssignment();
     if (rollbackError) {
       throw new Error(`${studentsError.message} (rollback failed: ${rollbackError.message})`);
@@ -71,6 +126,11 @@ export async function createWholeClassAssignment(input: {
 
     throw new Error(studentsError.message);
   }
+
+  // --- Recipient insert ---
+  // If the class has no enrolled students we skip the insert entirely.
+  // Once students enroll after the assignment is created they will be
+  // handled by the enrollment trigger (separate concern).
 
   if ((students ?? []).length > 0) {
     const recipients = students!.map((student) => ({
@@ -84,6 +144,7 @@ export async function createWholeClassAssignment(input: {
       .insert(recipients);
 
     if (recipientsError) {
+      // Recipient insert failed — delete the orphaned assignment row.
       const rollbackError = await rollbackAssignment();
       if (rollbackError) {
         throw new Error(`${recipientsError.message} (rollback failed: ${rollbackError.message})`);
@@ -96,6 +157,26 @@ export async function createWholeClassAssignment(input: {
   return assignment.id;
 }
 
+/**
+ * Loads the full assignment context for a student viewing an assigned activity.
+ *
+ * Verifies in order:
+ * 1. The student is a recipient of this assignment.
+ * 2. The assignment exists and belongs to the given class.
+ * 3. The activity exists, belongs to the class, and (optionally) matches the
+ *    expected activity type.
+ *
+ * Throws on any missing or mismatched entity so the caller can return a 404
+ * or 403 rather than rendering a partial or incorrect UI.
+ *
+ * @param input.supabase       Server-side Supabase client.
+ * @param input.classId        UUID of the class containing the assignment.
+ * @param input.assignmentId   UUID of the assignment to load.
+ * @param input.userId         UUID of the student requesting access.
+ * @param input.expectedType   Optional activity type check (e.g., "quiz"); throws
+ *                             if the activity's type does not match.
+ * @returns  A fully populated `AssignmentContext` ready for the activity page.
+ */
 export async function loadStudentAssignmentContext(input: {
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
   classId: string;
@@ -140,6 +221,8 @@ export async function loadStudentAssignmentContext(input: {
     throw new Error(`This assignment is not a ${input.expectedType} activity.`);
   }
 
+  // Coerce the JSONB `config` column to a plain object.  Supabase returns it
+  // as `unknown` so we guard against null or non-object values before casting.
   const safeConfig =
     activity.config && typeof activity.config === "object"
       ? (activity.config as Record<string, unknown>)
