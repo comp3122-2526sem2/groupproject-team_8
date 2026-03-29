@@ -11,6 +11,14 @@ import { isGuestMutableStoragePath } from "@/lib/guest/storage";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+/**
+ * Discriminated union returned by all sandbox provisioning functions.
+ *
+ * On success, `classId` is the UUID of the guest's assigned class and
+ * `sandboxId` is the guest_sandboxes row id (used for subsequent touch /
+ * discard calls). On failure, `code` is a machine-readable failure code and
+ * `reason` narrows which branch of the state machine produced the error.
+ */
 export type GuestSandboxResult =
   | {
       ok: true;
@@ -38,10 +46,24 @@ type GuestMaterialStorageRow = {
   storage_path: string | null;
 };
 
+/** Returns true when a PostgREST PGRST116 "no rows" error is received.
+ *  maybeSingle() resolves to null in that case, but the error object is
+ *  still populated — we treat it as a non-error so callers don't need to
+ *  special-case it everywhere. */
 function isMaybeSingleNoRowsError(error: { code?: string; message?: string } | null | undefined) {
   return error?.code === "PGRST116";
 }
 
+/**
+ * Detects whether a Supabase user is an anonymous (guest) user.
+ *
+ * Supabase sets `is_anonymous: true` on the user object for anonymous sign-ins.
+ * As a belt-and-suspenders check we also test `app_metadata.provider` because
+ * older SDK versions may not expose `is_anonymous` directly.
+ *
+ * @param user  The user object from a Supabase session, or null/undefined if no session exists.
+ * @returns     `true` if the user was created via `signInAnonymously()`.
+ */
 function isAnonymousUser(user: {
   is_anonymous?: boolean;
   app_metadata?: { provider?: string | null } | null;
@@ -49,6 +71,12 @@ function isAnonymousUser(user: {
   return user?.is_anonymous === true || user?.app_metadata?.provider === "anonymous";
 }
 
+/**
+ * Marks a sandbox row as expired in place.
+ *
+ * The `.eq("status", "active")` guard prevents double-expiry races where two
+ * concurrent requests both read an active sandbox and attempt to expire it.
+ */
 async function expireGuestSandbox(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
   sandboxId: string,
@@ -62,9 +90,26 @@ async function expireGuestSandbox(
     .eq("status", "active");
 }
 
+/**
+ * Deletes all Supabase Storage objects associated with a guest sandbox.
+ *
+ * Storage must be cleaned up *before* the DB row is discarded because the
+ * materials rows (which record `storage_path`) are cascade-deleted along with
+ * the sandbox.  Cleaning storage after would lose the path references needed
+ * to identify the files.
+ *
+ * Only paths that pass `isGuestMutableStoragePath` (i.e., belong to this
+ * sandbox) are removed, preventing accidental deletion of shared assets.
+ *
+ * @param sandboxId  The guest_sandboxes.id whose storage objects should be removed.
+ * @returns          `{ ok: true }` on success, `{ ok: false, error }` if the
+ *                   materials query or storage removal fails.
+ */
 async function removeGuestSandboxStorageObjects(
   sandboxId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  // Admin client is required because storage RLS restricts deletion to the
+  // owning user, but we may be cleaning up after the session has already ended.
   const adminSupabase = createAdminSupabaseClient();
   const { data: materials, error: materialsError } = await adminSupabase
     .from("materials")
@@ -76,6 +121,8 @@ async function removeGuestSandboxStorageObjects(
   }
 
   const materialRows = (materials ?? []) as GuestMaterialStorageRow[];
+  // De-duplicate paths and filter out any path that does not belong to this
+  // sandbox to guard against misconfigured storage_path values in the DB.
   const storagePaths = Array.from(
     new Set(
       materialRows
@@ -99,24 +146,82 @@ async function removeGuestSandboxStorageObjects(
   return { ok: true };
 }
 
+/**
+ * Provisions a new guest sandbox for the current server session.
+ *
+ * Thin public wrapper around `provisionGuestSandboxWithOptions` for callers
+ * that don't need to pass an IP address (e.g., internal server actions that
+ * already enforce their own rate limiting upstream).
+ *
+ * @returns  A `GuestSandboxResult` describing the provisioned sandbox or the
+ *           failure code if provisioning could not complete.
+ */
 export async function provisionGuestSandbox(): Promise<GuestSandboxResult> {
   return provisionGuestSandboxWithOptions();
 }
 
+/**
+ * Core guest sandbox provisioning state machine.
+ *
+ * The function handles seven distinct situations a caller may arrive in:
+ *
+ * 1. **No existing session** — Perform rate-limit check (if `ipAddress` is
+ *    provided), create an anonymous Supabase user, insert a sandbox row, and
+ *    run `clone_guest_sandbox` to stamp a copy of the template class.
+ *
+ * 2. **Existing anonymous user with an active, valid sandbox that already has
+ *    a `class_id`** — Return immediately; nothing to do.
+ *
+ * 3. **Existing anonymous user with an active, valid sandbox but no
+ *    `class_id` yet** — Call `clone_guest_sandbox` to attach a class to the
+ *    existing sandbox without creating a new user or sandbox row.
+ *
+ * 4. **Existing anonymous user whose sandbox has expired** — Expire the sandbox
+ *    row, sign out the anonymous user (cleaning up the Supabase Auth record),
+ *    reset `guestUserId` to null, and fall through to provision a fresh sandbox.
+ *
+ * 5. **Existing non-anonymous (real) user with an active, valid sandbox** —
+ *    Block: real users cannot enter guest mode without signing out first.
+ *
+ * 6. **Existing non-anonymous user whose sandbox has expired** — Block: surface
+ *    the expiry message but do *not* sign them out (their real session is valid).
+ *
+ * 7. **Existing non-anonymous user with no sandbox** — Block with conflict error.
+ *
+ * `shouldSignOutOnFailure` tracks whether *this call* created the anonymous
+ * Supabase user.  If any subsequent step (sandbox insert or clone) fails we
+ * must undo the anonymous sign-in to avoid orphaned Auth records.  We cannot
+ * simply call `signOut()` unconditionally on failure because we should NOT
+ * sign out a pre-existing anonymous user whose session was only partially
+ * usable.
+ *
+ * @param options.ipAddress  Caller IP used for the per-IP rate-limit check.
+ *                           Omit to skip the rate-limit check (e.g., for
+ *                           server-to-server calls).
+ * @returns  `GuestSandboxResult` with the provisioned `classId` and `sandboxId`.
+ */
 export async function provisionGuestSandboxWithOptions(options?: {
   ipAddress?: string | null;
 }): Promise<GuestSandboxResult> {
   const supabase = await createServerSupabaseClient();
+
+  // --- Inspect existing session ---
 
   const {
     data: { session: existingSession },
   } = await supabase.auth.getSession();
   const existingUser = existingSession?.user ?? null;
   const existingUserIsAnonymous = isAnonymousUser(existingUser);
+  // Carry the anonymous user id forward so we can skip a new signInAnonymously()
+  // call if a valid anonymous session already exists.
   let guestUserId = existingUserIsAnonymous ? existingUser?.id ?? null : null;
+  // Set to true only when *this invocation* created the anonymous Auth user,
+  // so we know to undo it if a later step fails (prevents orphaned Auth rows).
   let shouldSignOutOnFailure = false;
 
   if (existingUser) {
+    // --- Check for an existing sandbox on the current user ---
+
     const { data: existingSandbox, error: existingSandboxError } = await supabase
       .from("guest_sandboxes")
       .select("id,class_id,status,guest_role,expires_at,last_seen_at")
@@ -133,10 +238,14 @@ export async function provisionGuestSandboxWithOptions(options?: {
       };
     }
 
+    // --- Branch: expired sandbox ---
+
     if (existingSandbox && isGuestSandboxExpired(existingSandbox)) {
       await expireGuestSandbox(supabase, existingSandbox.id);
 
       if (!existingUserIsAnonymous) {
+        // A real (email/password) user's expired sandbox: surface the error
+        // message but do not touch their authentication session.
         return {
           ok: false,
           code: "guest-session-conflict",
@@ -145,9 +254,13 @@ export async function provisionGuestSandboxWithOptions(options?: {
         };
       }
 
+      // For an anonymous user the Auth record is only useful while the sandbox
+      // is alive.  Sign them out so a fresh anonymous user can be created below.
       await supabase.auth.signOut();
       guestUserId = null;
     }
+
+    // --- Branch: active sandbox already has a class assigned ---
 
     if (existingSandbox?.class_id && !isGuestSandboxExpired(existingSandbox)) {
       return {
@@ -157,6 +270,8 @@ export async function provisionGuestSandboxWithOptions(options?: {
       };
     }
 
+    // --- Branch: real (non-anonymous) user with no usable sandbox ---
+
     if (!existingUserIsAnonymous) {
       return {
         ok: false,
@@ -165,6 +280,10 @@ export async function provisionGuestSandboxWithOptions(options?: {
         reason: "existing-authenticated-session",
       };
     }
+
+    // --- Branch: anonymous user with an active sandbox but no class yet ---
+    // Call clone_guest_sandbox to attach a template class to the existing
+    // sandbox row rather than creating a new user + sandbox from scratch.
 
     if (existingSandbox?.id && !isGuestSandboxExpired(existingSandbox)) {
       const { data: classId, error: cloneError } = await supabase.rpc("clone_guest_sandbox", {
@@ -189,6 +308,8 @@ export async function provisionGuestSandboxWithOptions(options?: {
     }
   }
 
+  // --- Rate-limit check (new anonymous session path only) ---
+
   if (options?.ipAddress) {
     let allowed: boolean;
     try {
@@ -212,6 +333,8 @@ export async function provisionGuestSandboxWithOptions(options?: {
     }
   }
 
+  // --- Create anonymous Auth user if not already available ---
+
   if (!guestUserId) {
     const { data: authData, error: authError } = await supabase.auth.signInAnonymously();
     if (authError || !authData.user) {
@@ -224,6 +347,7 @@ export async function provisionGuestSandboxWithOptions(options?: {
     }
 
     guestUserId = authData.user.id;
+    // Mark that we own this Auth record so failure handling can clean it up.
     shouldSignOutOnFailure = true;
   }
 
@@ -236,6 +360,8 @@ export async function provisionGuestSandboxWithOptions(options?: {
     };
   }
 
+  // --- Insert sandbox row ---
+
   const sandboxId = crypto.randomUUID();
   const { error: sandboxError } = await supabase.from("guest_sandboxes").insert({
     id: sandboxId,
@@ -247,6 +373,7 @@ export async function provisionGuestSandboxWithOptions(options?: {
 
   if (sandboxError) {
     if (shouldSignOutOnFailure) {
+      // We created the anonymous user moments ago; undo it to avoid an orphan.
       await supabase.auth.signOut();
     }
     return {
@@ -257,12 +384,18 @@ export async function provisionGuestSandboxWithOptions(options?: {
     };
   }
 
+  // --- Clone template class into the new sandbox ---
+  // `clone_guest_sandbox` is a Postgres function that copies the template class,
+  // its blueprint, materials, and enrollments into a fresh class row scoped to
+  // this sandbox.  It returns the new class_id on success.
+
   const { data: classId, error: cloneError } = await supabase.rpc("clone_guest_sandbox", {
     p_sandbox_id: sandboxId,
     p_guest_user_id: guestUserId,
   });
 
   if (cloneError || typeof classId !== "string" || !classId) {
+    // Mark the sandbox as discarded so it is excluded from future active queries.
     await supabase.from("guest_sandboxes").update({ status: "discarded" }).eq("id", sandboxId);
     if (shouldSignOutOnFailure) {
       await supabase.auth.signOut();
@@ -278,6 +411,16 @@ export async function provisionGuestSandboxWithOptions(options?: {
   return { ok: true, classId, sandboxId };
 }
 
+/**
+ * Switches the guest role (teacher ↔ student) for an active sandbox.
+ *
+ * The role controls which subset of the guest class UI the user sees.
+ * `last_seen_at` is bumped so the inactivity expiry clock resets.
+ *
+ * @param sandboxId  The active guest_sandboxes row to update.
+ * @param newRole    Target role ("teacher" or "student").
+ * @returns          `{ ok: true }` on success, `{ ok: false, error }` on DB failure.
+ */
 export async function switchGuestRole(
   sandboxId: string,
   newRole: "teacher" | "student",
@@ -299,6 +442,16 @@ export async function switchGuestRole(
   return { ok: true };
 }
 
+/**
+ * Refreshes the `last_seen_at` timestamp on an active sandbox.
+ *
+ * Called periodically by the client to keep the inactivity window from
+ * closing mid-session.  The `.eq("status", "active")` guard is a no-op
+ * (safe) if the sandbox has already expired.
+ *
+ * @param sandboxId  The active guest_sandboxes row to touch.
+ * @returns          `{ ok: true }` on success, `{ ok: false, error }` on DB failure.
+ */
 export async function touchGuestSandbox(
   sandboxId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -318,11 +471,25 @@ export async function touchGuestSandbox(
   return { ok: true };
 }
 
+/**
+ * Fully tears down a guest sandbox: storage objects first, then the DB row.
+ *
+ * The two-step order is intentional: the `materials` rows that record
+ * `storage_path` values are deleted (via cascade) when the sandbox is
+ * discarded, so storage cleanup must happen *before* the RPC call.
+ * `discard_guest_sandbox` is a Postgres function that marks the sandbox as
+ * "discarded" and cascade-deletes all associated class data.
+ *
+ * @param sandboxId  The guest_sandboxes row to discard.
+ * @returns          `{ ok: true }` on full success, `{ ok: false, error }` if
+ *                   either storage cleanup or the DB discard fails.
+ */
 export async function discardGuestSandbox(
   sandboxId: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const supabase = await createServerSupabaseClient();
 
+  // Storage must be cleaned before the DB row is discarded — see JSDoc above.
   const storageCleanup = await removeGuestSandboxStorageObjects(sandboxId);
   if (!storageCleanup.ok) {
     return { ok: false, error: storageCleanup.error };
@@ -338,8 +505,21 @@ export async function discardGuestSandbox(
   return { ok: true };
 }
 
+/**
+ * Discards the current active sandbox for a user and provisions a fresh one.
+ *
+ * Used by the "Reset Demo" flow that lets a guest start the walkthrough over.
+ * Unlike `provisionGuestSandboxWithOptions` this function receives an explicit
+ * `userId` (already verified by the caller) and does not perform rate-limit or
+ * session checks.
+ *
+ * @param userId  The Supabase Auth user id of the guest requesting a reset.
+ * @returns       A `GuestSandboxResult` with the new sandbox's details.
+ */
 export async function resetGuestSandbox(userId: string): Promise<GuestSandboxResult> {
   const supabase = await createServerSupabaseClient();
+
+  // --- Discard existing sandbox, if any ---
 
   const { data: existingSandbox, error: existingSandboxError } = await supabase
     .from("guest_sandboxes")
@@ -369,6 +549,8 @@ export async function resetGuestSandbox(userId: string): Promise<GuestSandboxRes
     }
   }
 
+  // --- Insert fresh sandbox row ---
+
   const sandboxId = crypto.randomUUID();
   const { error: sandboxError } = await supabase.from("guest_sandboxes").insert({
     id: sandboxId,
@@ -387,12 +569,15 @@ export async function resetGuestSandbox(userId: string): Promise<GuestSandboxRes
     };
   }
 
+  // --- Clone template class into the new sandbox ---
+
   const { data: classId, error: cloneError } = await supabase.rpc("clone_guest_sandbox", {
     p_sandbox_id: sandboxId,
     p_guest_user_id: userId,
   });
 
   if (cloneError || typeof classId !== "string" || !classId) {
+    // Mark as discarded to keep the active-sandbox query clean.
     await supabase.from("guest_sandboxes").update({ status: "discarded" }).eq("id", sandboxId);
     return {
       ok: false,
