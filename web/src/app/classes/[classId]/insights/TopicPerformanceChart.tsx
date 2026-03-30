@@ -33,8 +33,8 @@ function statusColor(status: "good" | "warning" | "critical") {
  * Horizontal bar chart showing average quiz score per blueprint topic.
  *
  * **Colour coding:** Each bar is coloured by `topic.status`:
- * - `"good"` (≥ 75%) — green.
- * - `"warning"` (60–74%) — amber.
+ * - `"good"` (> 75%) — green.
+ * - `"warning"` (60–75%, inclusive) — amber.
  * - `"critical"` (< 60%) — red.
  * Status thresholds are computed server-side in `backend/app/analytics.py`.
  *
