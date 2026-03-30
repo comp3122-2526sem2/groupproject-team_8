@@ -43,7 +43,7 @@ type CanvasEntry = {
  * Chat UI for a graded assignment session.
  *
  * **Two-form architecture:**
- * 1. Chat form — sends student messages and streams AI replies via
+ * 1. Chat form — sends student messages and requests/loads AI replies via
  *    `sendAssignmentMessage`. Wrapped in `startTransition` to keep the
  *    reflection textarea and other UI interactive during the server round-trip.
  * 2. Submit form — persists the reflection and submits the full transcript via
