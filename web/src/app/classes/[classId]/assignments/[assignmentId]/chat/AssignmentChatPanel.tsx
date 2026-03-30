@@ -32,7 +32,7 @@ type AssignmentChatPanelProps = {
  *
  * - `"loading"` — canvas generation is in-flight; show a skeleton.
  * - `"revealed"` — generation succeeded; `spec` holds the layout descriptor.
- * - `"error"` — generation failed silently; suppress the canvas panel entirely.
+ * - `"error"` — generation failed; render the canvas in an error state with an inline error banner.
  */
 type CanvasEntry = {
   state: "loading" | "revealed" | "error";
