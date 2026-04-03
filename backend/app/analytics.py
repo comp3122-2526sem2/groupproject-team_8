@@ -698,7 +698,8 @@ def _generate_insights_payload(
             sid = sub.get("student_id")
             score = sub.get("score")
             if isinstance(aid, str) and isinstance(sid, str) and isinstance(score, (int, float)):
-                sub_scores[(aid, sid)].append(float(score))
+                # submissions.score is stored as 0–100 (scorePercent); normalize to 0–1
+                sub_scores[(aid, sid)].append(float(score) / 100.0)
 
         # Completion per student: count assignments that have a recipient row
         # status "submitted" or "reviewed" = complete
