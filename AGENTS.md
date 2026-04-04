@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Last updated: 2026-03-28 HKT
+Last updated: 2026-04-05 00:39:04 +07
 
 This file provides guidance to Codex (ChatGPT) when working with code in this repository.
 
@@ -201,7 +201,7 @@ mcp__supabase__execute_sql --sql "SELECT 1"
    - `NEXT_PUBLIC_SITE_URL` (e.g. `http://localhost:3000`; used for auth email redirect links)
    - At least one AI provider key: `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `OPENROUTER_API_KEY`
    - `PYTHON_BACKEND_URL` (default: `http://localhost:8001` for local dev)
-   - `PYTHON_BACKEND_API_KEY` (leave blank for local dev — backend allows unauthenticated by default)
+   - `PYTHON_BACKEND_API_KEY` (set a shared value in both web and backend, or explicitly enable `PYTHON_BACKEND_ALLOW_UNAUTHENTICATED_REQUESTS=true` for local-only dev)
 3. Optional variables:
    - `NEXT_PUBLIC_GUEST_MODE_ENABLED` — set `true` to enable the guest entry flow (off by default)
 
