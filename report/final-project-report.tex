@@ -13,6 +13,7 @@
 \usepackage{xcolor}
 \usepackage{caption}
 \usepackage{float}
+\usepackage{pdflscape}
 
 \hypersetup{
   colorlinks=true,
@@ -20,7 +21,7 @@
   urlcolor=blue!60!black,
   citecolor=blue!60!black,
   pdftitle={Final Project Report - STEM Learning Platform with GenAI},
-  pdfauthor={Project Team}
+  pdfauthor={Group 8}
 }
 
 \graphicspath{
@@ -36,27 +37,61 @@
 
 \newcommand{\ProjectTitle}{STEM Learning Platform with GenAI}
 \newcommand{\ReportTitle}{Final Project Report}
-\newcommand{\CourseCode}{COMP3122}
-\newcommand{\PreparedBy}{Project Team}
+\newcommand{\CourseName}{COMP3122 Information Systems Development}
+\newcommand{\GroupNumber}{8}
+\newcommand{\PreparedBy}{Group \#\GroupNumber}
 \newcommand{\ReportDate}{April 2026}
+\newcommand{\LiveProductUrl}{\href{https://ai-stem-learning-platform-group-8.vercel.app/}{\nolinkurl{ai-stem-learning-platform-group-8.vercel.app}}}
+\newcommand{\PrimaryRepoUrl}{\href{https://github.com/HaochenFa/AI-Learning-Platform-for-STEM}{\nolinkurl{HaochenFa/AI-Learning-Platform-for-STEM}}}
+\newcommand{\SubmissionRepoUrl}{\href{https://github.com/comp3122-2526sem2/groupproject-team_8}{\nolinkurl{comp3122-2526sem2/groupproject-team_8}}}
+\newcommand{\PageFigureWidth}{\dimexpr\paperwidth-1.25in\relax}
+\newcommand{\FullPageWidthGraphic}[1]{%
+  \makebox[\textwidth][c]{%
+    \includegraphics[
+      width=\PageFigureWidth,
+      height=0.74\textheight,
+      keepaspectratio
+    ]{#1}%
+  }%
+}
 
 \begin{document}
+\hypersetup{pageanchor=false}
 \pagenumbering{gobble}
 
 \begin{titlepage}
 \centering
 \vspace*{2cm}
-{\Large \CourseCode \par}
-\vspace{1.2cm}
+{\Large \CourseName \par}
+\vspace{0.4cm}
+{\large Group \#\GroupNumber \par}
+\vspace{1cm}
 {\Huge \bfseries \ReportTitle \par}
 \vspace{0.8cm}
 {\LARGE \ProjectTitle \par}
 \vspace{1.5cm}
-\begin{tabular}{>{\bfseries}p{4cm}p{8cm}}
+\begin{tabularx}{0.9\textwidth}{>{\bfseries}p{3.3cm}X}
 Prepared by & \PreparedBy \\
 Date & \ReportDate \\
 Repo snapshot & 2026-04-05 \\
-\end{tabular}
+Live product & \LiveProductUrl \\
+Primary repository & \PrimaryRepoUrl \\
+Submission repository & \SubmissionRepoUrl \\
+\end{tabularx}
+\vspace{1cm}
+
+{\large \bfseries Group Member Placeholders \par}
+\vspace{0.35cm}
+\begin{tabularx}{0.9\textwidth}{>{\bfseries}p{2.2cm}X X}
+\toprule
+Slot & Name & Student ID \\
+\midrule
+Member 1 & [Name Placeholder] & [Student ID Placeholder] \\
+Member 2 & [Name Placeholder] & [Student ID Placeholder] \\
+Member 3 & [Name Placeholder] & [Student ID Placeholder] \\
+Member 4 & [Name Placeholder] & [Student ID Placeholder] \\
+\bottomrule
+\end{tabularx}
 \vfill
 {\large
 This report documents the current implemented state of the repository, including the
@@ -66,6 +101,7 @@ deployment topology, and role-based user workflows.
 \end{titlepage}
 
 \clearpage
+\hypersetup{pageanchor=true}
 \pagenumbering{arabic}
 \tableofcontents
 \newpage
@@ -91,7 +127,7 @@ The implemented system is split into three cooperating runtime surfaces:
 
 From a product perspective, the platform supports:
 \begin{itemize}
-  \item \textbf{instructors / graders} who create classes, upload materials, generate and
+  \item \textbf{instructors} who create classes, upload materials, generate and
   publish blueprints, create assignments, review submissions, and inspect analytics;
   \item \textbf{students} who join classes with join codes, use the published blueprint,
   complete assignments, and learn through grounded AI chat; and
@@ -100,10 +136,11 @@ From a product perspective, the platform supports:
 \end{itemize}
 
 The repository also demonstrates a meaningful software engineering process. The current
-snapshot contains 401 commits, 92 merge commits, 23 active database migrations, a multi-layer
-test strategy, and a documented deployment topology across web, backend, and Supabase services.
-The result is not a toy prototype, but a coordinated educational platform with clear subsystem
-boundaries and operational considerations.
+snapshot contains 403 commits, 92 merge commits, 23 active database migrations, 61 web test
+files, 20 backend test files, 10 Playwright end-to-end specifications, and a documented
+deployment topology across web, backend, and Supabase services. The live deployed product is
+available at \LiveProductUrl. The result is not a toy prototype, but a coordinated educational
+platform with clear subsystem boundaries and operational considerations.
 
 \section{Project Background and Motivation}
 
@@ -157,7 +194,7 @@ Figure~\ref{fig:system-overview} shows the top-level structure of the current pl
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\textwidth]{README-diagram-01.png}
+  \FullPageWidthGraphic{README-diagram-01.png}
   \caption{Current high-level platform architecture.}
   \label{fig:system-overview}
 \end{figure}
@@ -175,7 +212,7 @@ for AI-heavy logic and the Supabase layer provides persistence, storage, securit
 \toprule
 Role & Implemented responsibilities \\
 \midrule
-Instructor / Grader & Create classes, upload materials, generate and curate blueprints, create assignments, review student work, monitor chat activity, inspect class insights, use the adaptive teaching brief, and preview the student experience. \\
+Instructor & Create classes, upload materials, generate and curate blueprints, create assignments, review student work, monitor chat activity, inspect class insights, use the adaptive teaching brief, and preview the student experience. \\
 Student & Join classes using a join code, access the published blueprint, use always-on AI chat, complete chat/quiz/flashcards assignments, and track progress from the student dashboard. \\
 Guest & Enter a sandbox demo, explore both teacher and student views through role switching, and safely evaluate the product without touching real user data. \\
 \bottomrule
@@ -209,12 +246,18 @@ Guest mode & Sandbox provisioning, role switching, reset flow, quota management,
 
 The most important end-to-end educational flow is shown in Figure~\ref{fig:value-flow}.
 
-\begin{figure}[H]
+\begin{landscape}
+\begin{figure}[p]
   \centering
-  \includegraphics[width=\textwidth]{README-diagram-02.png}
+  \includegraphics[
+    width=0.96\linewidth,
+    height=0.82\textheight,
+    keepaspectratio
+  ]{README-diagram-02.png}
   \caption{Blueprint-centered value flow from teacher materials to student learning and review.}
   \label{fig:value-flow}
 \end{figure}
+\end{landscape}
 
 This flow is central to the platform's pedagogy:
 \begin{enumerate}
@@ -312,7 +355,7 @@ logic and prompt design.
 
 \subsection{AI orchestration design}
 
-The repository currently supports OpenRouter, OpenAI, and Gemini as pluggable providers.
+The repository currently supports three pluggable providers: OpenRouter, OpenAI, and Gemini.
 Provider choice is environment-driven, and the backend can fall back across providers when needed.
 
 This design has several advantages:
@@ -336,7 +379,7 @@ history, and context compaction for long-running conversations.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\textwidth]{ARCHITECTURE-diagram-08.png}
+  \FullPageWidthGraphic{ARCHITECTURE-diagram-08.png}
   \caption{Chat workspace flow with grounded context retrieval and persisted assistant responses.}
   \label{fig:chat-workspace}
 \end{figure}
@@ -353,7 +396,7 @@ instead of blocking the user's request.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\textwidth]{DEPLOYMENT-diagram-02.png}
+  \FullPageWidthGraphic{DEPLOYMENT-diagram-02.png}
   \caption{Asynchronous material-processing pipeline.}
   \label{fig:material-pipeline}
 \end{figure}
@@ -491,58 +534,43 @@ This sequence suggests a healthy development pattern:
 
 \subsection{Collaboration workflow}
 
-The collaboration model that is directly observable from the repository is based on GitHub-style
-branching, pull requests, review, and merge integration.
+The collaboration model combined a strong primary engineering lead with structured review,
+testing, documentation, and feedback support across the rest of Group \#\GroupNumber. Haochen Fa
+served as the major developer and solution architect, leading the overall technical direction,
+system architecture, cross-service integration, deployment alignment, and most feature delivery.
+Other team members contributed through code review, feature and edge-case testing, product
+feedback, documentation work, and selected implementation tasks.
 
-Evidence visible in the current snapshot includes:
-\begin{itemize}
-  \item 401 commits in total;
-  \item 92 merge commits;
-  \item repeated feature-branch merge patterns such as guest mode, UI improvements, analytics,
-  teaching brief, and auth flows;
-  \item regular documentation updates that track design decisions, rollout notes, and lessons learned.
-\end{itemize}
+GitHub was the formal engineering workspace for the project. The team used GitHub Issues and pull
+requests to track implementation work, review changes, and communicate technical decisions, while
+WhatsApp was used for broader day-to-day discussion, rapid coordination, and design feedback. The
+main development repository is \PrimaryRepoUrl, and the organization repository prepared for
+review and submission is \SubmissionRepoUrl.
 
-This indicates an iterative workflow rather than a single large code dump. The team appears to
-have used:
-\begin{itemize}
-  \item feature branches for major workstreams;
-  \item pull requests to integrate features and fixes;
-  \item tests and documentation updates alongside implementation changes;
-  \item structured plans and handoff notes for ongoing work.
-\end{itemize}
-
-At the same time, one accuracy caveat is important: the visible git author history is concentrated
-under a small number of identities, especially one primary contributor identity. For that reason,
-this report documents the \emph{repository-observable collaboration process} rather than making
-unsupported claims about each team member's exact offline contribution split. If the course requires
-a per-member effort table, that should be appended using the team's own meeting notes or task records.
+The current repository history is consistent with this operating model. It shows 403 commits,
+92 merge commits, tagged release checkpoints, and repeated PR-based merges for guest mode,
+auth redesign, UI/UX improvements, analytics, documentation refreshes, and final hardening.
+This reflects a disciplined iterative workflow with clear integration checkpoints rather than
+a single large delivery at the end.
 
 \subsection{Use of GenAI during development}
 
-This project is itself a GenAI platform, but the repository also suggests that GenAI-assisted
-development was part of the engineering workflow. The documentation explicitly discusses Codex- and
-agent-assisted workflows, planning notes, and iterative bug fixing. From a software engineering
-perspective, this is useful to reflect on because GenAI appears to have been used as:
-\begin{itemize}
-  \item a coding accelerator for scaffolding and incremental implementation;
-  \item a design aid for exploring architecture and UI alternatives;
-  \item a debugging assistant for reproducing and fixing workflow bugs;
-  \item a documentation aid for maintaining architecture and usage guides.
-\end{itemize}
+GenAI-assisted development was used deliberately as part of the delivery strategy for this project.
+Codex and Claude Code were used to accelerate scaffolding, refactoring, debugging, documentation
+maintenance, test-support work, and repetitive implementation tasks across the multi-service stack.
 
-However, the repository also shows good evidence of human judgment:
-\begin{itemize}
-  \item repeated refactors and bug-fix passes after initial implementations;
-  \item hardening around access control, redirect behavior, and quota logic;
-  \item correction of real production-style issues such as signed URL previewing, timeout handling,
-  guest cleanup, and environment misconfiguration;
-  \item a sustained effort to align documentation with the actual runtime state.
-\end{itemize}
+This workflow was effective because the AI tooling was guided by an experienced senior developer
+who could provide clear, verbose, and constraint-aware instructions, set the right architectural
+context, and quickly evaluate whether generated output matched the intended code logic, product
+behavior, and UI/UX direction. Prompt engineering was therefore not a superficial convenience;
+it was part of the engineering discipline that kept the generated work aligned with the system's
+actual requirements.
 
-This combination is exactly the kind of responsible GenAI-assisted development that a modern course
-project should demonstrate: AI helps with speed, but humans still own design quality, correctness,
-and final judgment.
+In practice, AI output was always paired with human validation. Generated or suggested changes
+were reviewed against feature behavior, code structure, testing needs, Git and GitHub workflow
+hygiene, dependency/tooling correctness, and the operational requirements of the web, backend,
+and Supabase layers. This made AI a force multiplier for rapid development without giving up
+ownership of correctness, maintainability, or product quality.
 
 \section{Testing, Quality Assurance, and Deployment}
 
@@ -553,13 +581,13 @@ The repository implements a layered testing strategy rather than relying on only
 \begin{table}[H]
 \centering
 \caption{Current testing layers in the repository}
-\begin{tabularx}{\textwidth}{>{\bfseries}p{3.3cm}X>{\raggedleft\arraybackslash}p{2.2cm}}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{3.3cm}X>{\raggedright\arraybackslash}p{2.7cm}}
 \toprule
 Layer & What it covers & Evidence in repo \\
 \midrule
-Web unit and integration tests & Server actions, auth flows, route guards, material actions, blueprint logic, chat flows, guest helpers, UI primitives, validation helpers & 60 test files under \texttt{web/src} \\
-Backend unit tests & Providers, schemas, class flows, blueprint generation, quiz, flashcards, materials, analytics, chat workspace, guest rate limiting & 17 Python test files under \texttt{backend/tests} \\
-End-to-end tests & Teacher navigation, student navigation, login, join class, settings, sign-out, and guest entry against a deployed environment & 9 Playwright specs under \texttt{tests/e2e} \\
+Web unit and integration tests & Server actions, auth flows, route guards, material actions, blueprint logic, chat flows, guest helpers, UI primitives, validation helpers & 61 test files under \texttt{web/src} \\
+Backend unit tests & Providers, schemas, class flows, blueprint generation, quiz, flashcards, materials, analytics, chat workspace, guest rate limiting & 20 Python test files under \texttt{backend/tests} \\
+End-to-end tests & Teacher navigation, student navigation, login, join class, settings, sign-out, and guest entry against a deployed environment & 10 Playwright specs under \texttt{tests/e2e} \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -594,7 +622,7 @@ Supabase project. Figure~\ref{fig:deployment-topology} captures this structure.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\textwidth]{DEPLOYMENT-diagram-01.png}
+  \FullPageWidthGraphic{DEPLOYMENT-diagram-01.png}
   \caption{Hosted deployment topology across frontend, backend, and Supabase services.}
   \label{fig:deployment-topology}
 \end{figure}
@@ -691,26 +719,26 @@ In its current form, the project demonstrates several strengths:
   \item meaningful testing and deployment documentation.
 \end{itemize}
 
-\subsection{What could still be improved}
+\subsection{Next-stage expansion opportunities}
 
-A professional reflection should also note realistic limitations:
+As a platform with a strong core already in place, the project also has clear next-stage
+expansion paths:
 \begin{itemize}
-  \item the production UI currently has teacher/student roles but no dedicated admin console;
-  \item the operational surface is sophisticated, so monitoring and observability could still grow further;
-  \item the visible git author concentration suggests that a clearer contribution matrix may still be needed for academic assessment;
-  \item broader activity types beyond chat, quiz, and flashcards remain future-facing rather than fully shipped.
+  \item richer operator tooling around observability, release health, and administrative reporting;
+  \item broader activity formats beyond the current chat, quiz, and flashcards set;
+  \item deeper analytics and intervention workflows for longitudinal classroom support;
+  \item further packaging of deployment and runbook automation for smoother environment provisioning.
 \end{itemize}
 
-\section{User Manual}
+\section{User and Operations Manual}
 
-\subsection{Administrator / System Maintainer}
+\subsection{Administrator Manual (Deployment and Operations)}
 
-\textbf{Important accuracy note:} the current release does \emph{not} expose a dedicated in-app
-administrator dashboard. The repository does contain administrative capabilities at the database
-and deployment level (for example, \texttt{admin\_users} in SQL policies and Supabase admin APIs),
-but operational administration is performed through deployment tooling, Supabase configuration, and
-project infrastructure rather than through end-user screens. For that reason, this subsection
-documents the administrator workflow that actually exists in the current system.
+The administrator role in this platform is centered on environment setup, Supabase project
+administration, release deployment, and operational data management. In practice, administrators
+use the deployment pipeline, Supabase Dashboard, SQL editor, environment configuration, and health
+checks to operate the system across the web app, Python backend, Edge Functions, and hosted
+Supabase project.
 
 \subsubsection*{A. Initial platform setup}
 
@@ -727,9 +755,10 @@ documents the administrator workflow that actually exists in the current system.
   \end{itemize}
   \item Configure required secrets for the backend and both Edge Functions.
   \item Deploy the web app and Python backend.
+  \item Verify the live environment and smoke-test the deployed product.
 \end{enumerate}
 
-\subsubsection*{B. Key administrator responsibilities}
+\subsubsection*{B. Core operational responsibilities}
 
 \begin{itemize}
   \item Maintain environment variables for the web app, backend, and Edge Functions.
@@ -746,33 +775,130 @@ documents the administrator workflow that actually exists in the current system.
   \end{itemize}
 \end{itemize}
 
-\subsubsection*{C. Common admin commands}
+\subsubsection*{C. Common operating commands}
 
-From the current repository documentation:
+\textbf{Local development and verification}
 
-\begin{itemize}
-  \item Install dependencies:
-  \begin{center}
-  \texttt{pnpm install} \\
-  \texttt{pip install -r backend/requirements.txt}
-  \end{center}
-  \item Run locally:
-  \begin{center}
-  \texttt{pnpm dev} \\
-  \texttt{uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8001 --reload}
-  \end{center}
-  \item Apply migrations:
-  \begin{center}
-  \texttt{npx supabase db push}
-  \end{center}
-\end{itemize}
+\begin{verbatim}
+pnpm install
+pip install -r backend/requirements.txt
+pnpm dev
+uvicorn app.main:app --app-dir backend --host 0.0.0.0 \
+  --port 8001 --reload
+pnpm test
+python3 -m unittest discover -s backend/tests -p 'test_*.py'
+\end{verbatim}
 
-\subsection{Instructor / Grader Manual}
+\textbf{Supabase deployment and schema operations}
+
+\begin{verbatim}
+npx supabase db push
+npx supabase functions deploy material-worker
+npx supabase functions deploy guest-sandbox-cleanup
+\end{verbatim}
+
+\textbf{Frontend deployment}
+
+\begin{verbatim}
+cd web
+npx --yes vercel --yes --prod
+\end{verbatim}
+
+\textbf{Backend health verification}
+
+\begin{verbatim}
+curl https://<backend-domain>/healthz
+\end{verbatim}
+
+\subsubsection*{D. Useful Supabase Dashboard and SQL operations}
+
+The Supabase Dashboard is the main administrative control surface for account support, data
+inspection, and operational maintenance. Authentication issues can be handled in
+\textbf{Authentication -> Users}, storage artifacts can be reviewed in \textbf{Storage}, and
+targeted data operations can be executed through the \textbf{SQL Editor}. The following queries
+are directly aligned with the current schema.
+
+\textbf{Inspect user accounts, confirmation state, and profile roles}
+
+\begin{verbatim}
+select
+  u.id,
+  u.email,
+  u.email_confirmed_at,
+  p.display_name,
+  p.account_type
+from auth.users u
+left join public.profiles p on p.id = u.id
+order by u.created_at desc;
+\end{verbatim}
+
+\textbf{Register a platform administrator}
+
+\begin{verbatim}
+insert into public.admin_users (user_id)
+values ('<user-uuid>'::uuid)
+on conflict (user_id) do nothing;
+\end{verbatim}
+
+\textbf{Update a user's display name}
+
+\begin{verbatim}
+update public.profiles
+set display_name = '<new-display-name>'
+where id = '<user-uuid>'::uuid;
+\end{verbatim}
+
+\textbf{Review classes and join codes}
+
+\begin{verbatim}
+select id, title, subject, level, join_code, archived, created_at
+from public.classes
+order by created_at desc;
+\end{verbatim}
+
+\textbf{Inspect material-processing state and latest job status}
+
+\begin{verbatim}
+select
+  m.id,
+  c.title as class_title,
+  m.title as material_title,
+  m.status,
+  j.stage,
+  j.attempts,
+  j.last_error,
+  m.created_at
+from public.materials m
+join public.classes c on c.id = m.class_id
+left join public.material_processing_jobs j on j.material_id = m.id
+order by m.created_at desc;
+\end{verbatim}
+
+\textbf{Review guest sandboxes and manually mark a sandbox for cleanup}
+
+\begin{verbatim}
+select id, user_id, class_id,
+       status, guest_role, expires_at, last_seen_at
+from public.guest_sandboxes
+order by created_at desc;
+
+update public.guest_sandboxes
+set status = 'expired', expires_at = now()
+where id = '<sandbox-uuid>'::uuid;
+\end{verbatim}
+
+\textbf{Run a manual cleanup pass from the SQL editor when required}
+
+\begin{verbatim}
+select public.cleanup_expired_guest_sandboxes(50);
+\end{verbatim}
+
+\subsection{Instructor Manual}
 
 \subsubsection*{A. Create an account and sign in}
 
 \begin{enumerate}
-  \item Open the landing page.
+  \item Open the deployed application.
   \item Choose \textbf{Create an account}.
   \item Select the \textbf{teacher} account type.
   \item Enter email and password.
@@ -864,7 +990,7 @@ To create an activity:
 \subsubsection*{A. Create an account and sign in}
 
 \begin{enumerate}
-  \item Open the landing page.
+  \item Open the deployed application.
   \item Choose \textbf{Create an account}.
   \item Select the \textbf{student} account type.
   \item Enter email and password.
@@ -915,8 +1041,8 @@ The workspace is intentionally more focused and less administratively dense than
   \item Continue the conversation as needed.
 \end{enumerate}
 
-If chat is not yet available, the likely reason is that the instructor has not published the
-blueprint yet.
+AI chat becomes available once the instructor publishes the blueprint, ensuring that responses are
+grounded in approved class content.
 
 \subsubsection*{F. Complete assignments}
 
@@ -947,8 +1073,8 @@ blueprint yet.
 
 \subsection{Supplementary Guest Demo Flow}
 
-Although the course report specifically asks for admin, instructor, and student manuals, the guest
-workflow is worth documenting because it is a significant implemented feature.
+In addition to the required admin, instructor, and student manuals, the guest workflow is worth
+documenting because it is a significant implemented feature.
 
 \begin{enumerate}
   \item From the landing page, choose \textbf{Continue as guest} when guest mode is enabled.
@@ -986,6 +1112,8 @@ This report was prepared against the current repository state using the followin
     \item \texttt{DESIGN.md}
     \item \texttt{UIUX.md}
     \item \texttt{DEPLOYMENT.md}
+    \item \texttt{AGENTS.md}
+    \item \texttt{CLAUDE.md}
   \end{itemize}
   \item subsystem documentation:
   \begin{itemize}
@@ -1009,12 +1137,12 @@ This report was prepared against the current repository state using the followin
   \end{itemize}
 \end{itemize}
 
-\section{Current Accuracy Caveat About the ``Admin'' Role}
+\section{Submission and Live System Links}
 
-The course deliverable asks for an admin user manual, but the current repository does not expose a
-dedicated end-user admin console. Permanent in-app roles are teacher and student, while guest mode
-is a sandboxed anonymous access path. Administrative responsibilities in the current release exist
-mainly at the infrastructure and deployment layer. This report therefore documents the administrator
-workflow that is actually implemented today, rather than inventing an unsupported UI role.
+\begin{itemize}
+  \item Live product: \LiveProductUrl
+  \item Primary development repository: \PrimaryRepoUrl
+  \item Organization submission repository: \SubmissionRepoUrl
+\end{itemize}
 
 \end{document}
