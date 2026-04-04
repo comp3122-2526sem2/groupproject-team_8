@@ -31,6 +31,8 @@ describe("HomePage", () => {
     const html = renderToStaticMarkup(await HomePage({}));
 
     expect(html).toContain("Continue as guest");
+    expect(html).toContain('action="/guest/enter"');
+    expect(html).toContain('method="post"');
     expect(html).toContain("Create account");
   });
 

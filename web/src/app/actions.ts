@@ -520,9 +520,10 @@ export async function signOut() {
  * Provisions a new guest (anonymous) session and returns the redirect URL for
  * the guest's sandboxed class.
  *
- * This action is called from the `/guest/enter` page.  It returns a result
- * object rather than redirecting so the client component can handle rate-limit
- * feedback without a full page reload.
+ * This action is called from the `/guest/enter` route handler after the
+ * homepage guest-entry form submits. It returns a result object rather than
+ * redirecting so the route can translate structured failures into stable
+ * landing-page feedback.
  *
  * Rate-limit hits are logged at `warn` level; other failures at `error` level,
  * because rate limiting is an expected operational event rather than an

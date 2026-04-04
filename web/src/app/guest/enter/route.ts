@@ -3,7 +3,7 @@ import { startGuestSession } from "@/app/actions";
 import { getGuestEntryIp } from "@/lib/guest/entry-rate-limit";
 import { toGuestEntryErrorQuery } from "@/lib/guest/errors";
 
-export async function GET(request: Request) {
+async function handleGuestEntry(request: Request) {
   const result = await startGuestSession({
     ipAddress: getGuestEntryIp(request),
   });
@@ -16,4 +16,12 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.redirect(new URL(result.redirectTo, request.url));
+}
+
+export async function POST(request: Request) {
+  return handleGuestEntry(request);
+}
+
+export async function GET(request: Request) {
+  return NextResponse.redirect(new URL("/", request.url));
 }

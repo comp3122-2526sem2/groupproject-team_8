@@ -6,10 +6,10 @@ test.describe('Guest mode entry', () => {
     // Visit the homepage (not logged in)
     await page.goto(BASE_URL);
 
-    // Click guest entry link
-    const guestLink = page.getByRole('link', { name: 'Continue as guest' });
-    await expect(guestLink).toBeVisible({ timeout: 10_000 });
-    await guestLink.click();
+    // Submit the guest entry form
+    const guestButton = page.getByRole('button', { name: 'Continue as guest' });
+    await expect(guestButton).toBeVisible({ timeout: 10_000 });
+    await guestButton.click();
 
     // Should redirect to a class page (guest sandbox)
     await expect(page).toHaveURL(/\/classes\//, { timeout: 20_000 });

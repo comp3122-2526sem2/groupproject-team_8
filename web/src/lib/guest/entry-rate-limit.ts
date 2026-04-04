@@ -7,19 +7,17 @@ import {
 } from "@/lib/guest/config";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
-const FALLBACK_IP = "unknown";
-
 export function getGuestEntryIp(request: Request) {
   return (
     request.headers.get("cf-connecting-ip")?.trim() ||
     request.headers.get("x-real-ip")?.trim() ||
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    FALLBACK_IP
+    null
   );
 }
 
 function hashGuestEntryIp(ip: string) {
-  return createHash("sha256").update(ip || FALLBACK_IP).digest("hex");
+  return createHash("sha256").update(ip).digest("hex");
 }
 
 export async function consumeGuestEntryRateLimit(ip: string) {

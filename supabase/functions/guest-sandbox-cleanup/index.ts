@@ -5,6 +5,7 @@ type CleanupCandidate = {
   id: string;
   user_id: string;
   status: "active" | "expired" | "discarded";
+  active_ai_requests: number | null;
   created_at: string | null;
   expires_at: string | null;
   last_seen_at: string | null;
@@ -98,7 +99,7 @@ async function listCleanupCandidates(supabase: SupabaseClient, batchSize: number
   const inactivityCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const { data, error } = await supabase
     .from("guest_sandboxes")
-    .select("id,user_id,status,created_at,expires_at,last_seen_at")
+    .select("id,user_id,status,active_ai_requests,created_at,expires_at,last_seen_at")
     .or(
       [
         "status.in.(expired,discarded)",
@@ -132,6 +133,13 @@ async function cleanupSandbox(supabase: SupabaseClient, candidate: CleanupCandid
   const { error: classDeleteError } = await supabase.from("classes").delete().eq("sandbox_id", candidate.id);
   if (classDeleteError) {
     throw new Error(`class cleanup failed: ${classDeleteError.message}`);
+  }
+
+  const { error: quotaReleaseError } = await supabase.rpc("release_guest_sandbox_quota", {
+    p_sandbox_id: candidate.id,
+  });
+  if (quotaReleaseError) {
+    throw new Error(`quota release failed: ${quotaReleaseError.message}`);
   }
 
   const { error: userDeleteError } = await supabase.auth.admin.deleteUser(candidate.user_id);

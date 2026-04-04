@@ -18,15 +18,18 @@ async function loadRoute() {
   return await import("./route");
 }
 
-function makeRequest(ip = "203.0.113.10") {
+function makeRequest(ip?: string, method = "POST") {
   return new Request("https://example.com/guest/enter", {
-    headers: {
-      "x-forwarded-for": ip,
-    },
+    method,
+    headers: ip
+      ? {
+          "x-forwarded-for": ip,
+        }
+      : undefined,
   });
 }
 
-describe("GET /guest/enter", () => {
+describe("POST /guest/enter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
@@ -43,9 +46,9 @@ describe("GET /guest/enter", () => {
       ok: true,
       redirectTo: "/classes/class-1",
     });
-    const { GET } = await loadRoute();
+    const { POST } = await loadRoute();
 
-    const response = await GET(makeRequest());
+    const response = await POST(makeRequest());
 
     expect(startGuestSessionMock).toHaveBeenCalledTimes(1);
     expect(startGuestSessionMock).toHaveBeenCalledWith({
@@ -60,9 +63,9 @@ describe("GET /guest/enter", () => {
       code: "too-many-guest-sessions",
       error: "too-many-guest-sessions",
     });
-    const { GET } = await loadRoute();
+    const { POST } = await loadRoute();
 
-    const response = await GET(makeRequest("203.0.113.12"));
+    const response = await POST(makeRequest("203.0.113.12"));
 
     expect(startGuestSessionMock).toHaveBeenCalledWith({
       ipAddress: "203.0.113.10",
@@ -78,9 +81,9 @@ describe("GET /guest/enter", () => {
       code: "guest-auth-unavailable",
       error: "Anonymous auth disabled",
     });
-    const { GET } = await loadRoute();
+    const { POST } = await loadRoute();
 
-    const response = await GET(makeRequest("203.0.113.12"));
+    const response = await POST(makeRequest("203.0.113.12"));
 
     expect(startGuestSessionMock).toHaveBeenCalledWith({
       ipAddress: "203.0.113.10",
@@ -94,9 +97,9 @@ describe("GET /guest/enter", () => {
       code: "guest-sandbox-provision-failed",
       error: "Guest mode is unavailable.",
     });
-    const { GET } = await loadRoute();
+    const { POST } = await loadRoute();
 
-    const response = await GET(makeRequest("203.0.113.13"));
+    const response = await POST(makeRequest("203.0.113.13"));
 
     expect(response.headers.get("location")).toBe("https://example.com/?error=guest-unavailable");
   });
@@ -107,12 +110,43 @@ describe("GET /guest/enter", () => {
       code: "guest-session-check-failed",
       error: "We couldn't verify your guest session right now. Please try again.",
     });
-    const { GET } = await loadRoute();
+    const { POST } = await loadRoute();
 
-    const response = await GET(makeRequest("203.0.113.14"));
+    const response = await POST(makeRequest("203.0.113.14"));
 
     expect(response.headers.get("location")).toBe(
       "https://example.com/?error=guest-session-check-failed",
     );
+  });
+
+  it("skips IP throttling when the client IP headers are unavailable", async () => {
+    getGuestEntryIpMock.mockReturnValue(null);
+    startGuestSessionMock.mockResolvedValue({
+      ok: true,
+      redirectTo: "/classes/class-1",
+    });
+    const { POST } = await loadRoute();
+
+    const response = await POST(makeRequest(undefined));
+
+    expect(startGuestSessionMock).toHaveBeenCalledWith({
+      ipAddress: null,
+    });
+    expect(response.headers.get("location")).toBe("https://example.com/classes/class-1");
+  });
+});
+
+describe("GET /guest/enter", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("redirects home without creating a guest session", async () => {
+    const { GET } = await loadRoute();
+
+    const response = await GET(makeRequest("203.0.113.10", "GET"));
+
+    expect(startGuestSessionMock).not.toHaveBeenCalled();
+    expect(response.headers.get("location")).toBe("https://example.com/");
   });
 });

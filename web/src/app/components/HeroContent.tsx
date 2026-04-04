@@ -157,9 +157,14 @@ export default function HeroContent({
             {secondaryLabel} →
           </Link>
           {guestHref && guestLabel ? (
-            <Link href={guestHref} className="text-sm ui-motion-color text-ui-subtle hover:text-accent">
-              {guestLabel} →
-            </Link>
+            <form action={guestHref} method="post" className="contents">
+              <button
+                type="submit"
+                className="appearance-none border-0 bg-transparent p-0 text-sm ui-motion-color text-ui-subtle hover:text-accent"
+              >
+                {guestLabel} →
+              </button>
+            </form>
           ) : null}
         </motion.div>
       </motion.div>
