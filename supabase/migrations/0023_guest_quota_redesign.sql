@@ -28,16 +28,22 @@ create table public.guest_session_quota (
   updated_at                 timestamptz not null default now()
 );
 
--- Migrate existing active_requests value from guest_ai_quota_state if present
-insert into public.guest_session_quota (scope, active_requests, updated_at)
-select 'global', coalesce(active_requests, 0), now()
+-- Migrate existing active_requests value from guest_ai_quota_state if present,
+-- and seed active_sessions from the count of currently active guest sandboxes
+-- so the new cap is correct immediately after rollout.
+insert into public.guest_session_quota (scope, active_requests, active_sessions, updated_at)
+select 'global',
+       coalesce(active_requests, 0),
+       (select count(*)::integer from public.guest_sandboxes where status = 'active'),
+       now()
 from   public.guest_ai_quota_state
 where  scope = 'global'
 on conflict (scope) do nothing;
 
--- Ensure the row exists even if old table was empty
-insert into public.guest_session_quota (scope)
-values ('global')
+-- Ensure the row exists even if old table was empty, seeding active_sessions.
+insert into public.guest_session_quota (scope, active_sessions)
+select 'global',
+       (select count(*)::integer from public.guest_sandboxes where status = 'active')
 on conflict (scope) do nothing;
 
 -- Replace functions that hold a rowtype dependency on guest_ai_quota_state
@@ -180,10 +186,11 @@ $$;
 grant execute on function public.acquire_guest_session_service(integer, integer, integer) to service_role;
 
 -- ─── 4. release_guest_session_slot_service ───────────────────────────────────
---   Decrements active_sessions AND creation_count by 1 (floor 0 for both).
---   Called from sandbox.ts in failure path when provision fails after quota was acquired.
---   Also decrements creation_count so aborted provisioning does not permanently
---   burn one of the 20/hour creation tokens.
+--   Decrements active_sessions by 1 (floor 0).
+--   Called from sandbox.ts in failure path when provision fails after quota was acquired,
+--   and from normal expiry/cleanup paths.
+--   Does NOT touch creation_count — that counter is intentionally sticky within the
+--   window so session churn cannot exceed the hourly creation cap.
 
 create or replace function public.release_guest_session_slot_service()
 returns void
@@ -198,7 +205,6 @@ begin
 
   update public.guest_session_quota
   set active_sessions = greatest(active_sessions - 1, 0),
-      creation_count  = greatest(creation_count  - 1, 0),
       updated_at      = now()
   where scope = 'global';
 end;

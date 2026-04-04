@@ -142,9 +142,12 @@ async function cleanupSandbox(supabase: SupabaseClient, candidate: CleanupCandid
     throw new Error(`quota release failed: ${quotaReleaseError.message}`);
   }
 
-  // Decrement active_sessions for sandboxes that were never explicitly discarded.
-  // Discarded sandboxes already had their slot decremented by discard_guest_sandbox().
-  if (candidate.status !== "discarded") {
+  // Decrement active_sessions only for still-active sandboxes (expired by TTL/inactivity
+  // but never passed through expireGuestSandbox or discard_guest_sandbox).
+  // - 'discarded': already decremented by discard_guest_sandbox() RPC
+  // - 'expired':   already decremented inline by expireGuestSandbox() in sandbox.ts
+  // - 'active':    timed out without going through the frontend — decrement here
+  if (candidate.status === "active") {
     const { error: sessionSlotError } = await supabase.rpc("release_guest_session_slot_service");
     if (sessionSlotError) {
       throw new Error(`session slot release failed: ${sessionSlotError.message}`);

@@ -576,21 +576,11 @@ export async function resetGuestSandbox(userId: string): Promise<GuestSandboxRes
     };
   }
 
-  if (existingSandbox?.id) {
-    const discarded = await discardGuestSandbox(existingSandbox.id);
-    if (!discarded.ok) {
-      return {
-        ok: false,
-        code: "guest-sandbox-provision-failed",
-        error: discarded.error ?? "Failed to discard the old guest sandbox.",
-        reason: "discard-existing-sandbox",
-      };
-    }
-  }
-
-  // --- Re-acquire global session quota slot for the replacement sandbox ---
-  // discard_guest_sandbox decremented active_sessions; we must re-increment
-  // so the replacement counts correctly against the global cap.
+  // --- Acquire global session quota slot BEFORE discarding the old sandbox ---
+  // Checking caps first ensures the guest still has a working demo if the
+  // system is at capacity — we never destroy the existing sandbox speculatively.
+  // During the brief window between acquire and discard, active_sessions is
+  // over-counted by 1; with a 60-session cap this is acceptable.
 
   const adminSupabase = createAdminSupabaseClient();
   const { data: quotaResult, error: quotaError } = await adminSupabase.rpc(
@@ -613,6 +603,22 @@ export async function resetGuestSandbox(userId: string): Promise<GuestSandboxRes
       error: quota?.reason === "cap_creation" ? "too-many-new-sessions" : "too-many-active-sessions",
       reason: quota?.reason === "cap_creation" ? "creation-rate-cap" : "active-session-cap",
     };
+  }
+
+  // --- Discard existing sandbox now that the new slot is secured ---
+
+  if (existingSandbox?.id) {
+    const discarded = await discardGuestSandbox(existingSandbox.id);
+    if (!discarded.ok) {
+      // New slot was acquired but old sandbox could not be discarded — release it.
+      await releaseGuestSessionSlot();
+      return {
+        ok: false,
+        code: "guest-sandbox-provision-failed",
+        error: discarded.error ?? "Failed to discard the old guest sandbox.",
+        reason: "discard-existing-sandbox",
+      };
+    }
   }
 
   // --- Insert fresh sandbox row ---
