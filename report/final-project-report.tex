@@ -57,6 +57,10 @@
     ]{#1}%
   }%
 }
+\newcommand{\FeatureEntry}[2]{%
+  \textbf{#1}\par
+  #2\par\medskip
+}
 
 \begin{document}
 \hypersetup{pageanchor=false}
@@ -230,26 +234,16 @@ teacher-oriented class workflows where the route logic permits \texttt{teacher} 
 
 \subsection{Feature set}
 
-\begin{table}[H]
-\centering
-\caption{Major implemented product features}
-\begin{tabularx}{\textwidth}{>{\bfseries}p{3.3cm}X}
-\toprule
-Feature area & Current implementation \\
-\midrule
-Authentication & Email/password sign-in for permanent accounts, a shared \texttt{AuthSurface} for sign-in/sign-up/forgot-password, landing-page modal auth via query params, fallback pages at \texttt{/login}, \texttt{/register}, and \texttt{/forgot-password}, SSR confirmation/recovery handling via \texttt{/auth/confirm}, dedicated \texttt{/reset-password} completion, and guest access via Supabase Anonymous Auth. \\
-Class management & Teacher class creation, student join-by-code, role-aware dashboards, and class-scoped navigation. \\
-Materials workflow & PDF, DOCX, and PPTX upload; asynchronous extraction/chunking/embedding; preview, download, and delete actions. \\
-Blueprint workflow & Draft, overview, and published blueprint lifecycle with teacher editing and publish control. \\
-Learning activities & Chat assignments, quiz assignments, flashcard assignments, plus open-practice class chat. \\
-Teacher review & Assignment review screens for chat, quiz, and flashcards, including feedback-saving flows. \\
-Analytics & Class intelligence dashboard with summaries, charts, student drill-downs, and intervention suggestions. \\
-Teaching support & Adaptive teaching brief widget summarizing what needs attention and recommended next actions. \\
-Visual explanation & Generative canvas support for charts and diagram-style responses in chat and analytics contexts. \\
-Guest mode & Sandbox provisioning, role switching, reset flow, quota management, expiry, and cleanup. \\
-\bottomrule
-\end{tabularx}
-\end{table}
+\FeatureEntry{Authentication}{Email/password sign-in for permanent accounts, a shared \texttt{AuthSurface} for sign-in/sign-up/forgot-password, landing-page modal auth via query params, fallback pages at \texttt{/login}, \texttt{/register}, and \texttt{/forgot-password}, SSR confirmation/recovery handling via \texttt{/auth/confirm}, dedicated \texttt{/reset-password} completion, and guest access via Supabase Anonymous Auth.}
+\FeatureEntry{Class management}{Teacher class creation, student join-by-code, role-aware dashboards, and class-scoped navigation.}
+\FeatureEntry{Materials workflow}{PDF, DOCX, and PPTX upload; asynchronous extraction/chunking/embedding; preview, download, and delete actions.}
+\FeatureEntry{Blueprint workflow}{Draft, overview, and published blueprint lifecycle with teacher editing and publish control.}
+\FeatureEntry{Learning activities}{Chat assignments, quiz assignments, flashcard assignments, plus open-practice class chat.}
+\FeatureEntry{Teacher review}{Assignment review screens for chat, quiz, and flashcards, including feedback-saving flows.}
+\FeatureEntry{Analytics}{Class intelligence dashboard with summaries, charts, student drill-downs, and intervention suggestions.}
+\FeatureEntry{Teaching support}{Adaptive teaching brief widget summarizing what needs attention and recommended next actions.}
+\FeatureEntry{Visual explanation}{Generative canvas support for charts and diagram-style responses in chat and analytics contexts.}
+\FeatureEntry{Guest mode}{Sandbox provisioning, role switching, reset flow, quota management, expiry, and cleanup.}
 
 \subsection{Blueprint-centered value flow}
 
