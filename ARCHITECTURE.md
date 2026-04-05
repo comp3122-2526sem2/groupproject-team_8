@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-Last updated: 2026-04-05
+Last updated: 2026-04-05 (workflow diagram refresh for report Section 3.4)
 
 This document is the technical deep dive for the STEM Learning Platform with GenAI. It complements `DESIGN.md`: `DESIGN.md` explains the broad product and system story, while this document goes deeper on runtime structure, subsystem boundaries, request flows, background jobs, and implementation tradeoffs.
 
@@ -472,7 +472,73 @@ That separation is useful for debugging and for keeping each subsystem conceptua
 - guest mode depends on both web config and Supabase anonymous auth
 - the project intentionally favors architectural clarity over a single-deployment-surface simplification
 
-## 15. Related Docs
+## 15. Blueprint-Centered Operating Flow
+
+This detailed workflow shows how the implemented platform turns teacher-owned classroom content into
+a governed instructional loop. It is intentionally more explicit than the lightweight overview in
+`README.md`, because it captures the real control points that matter to the product report:
+background material readiness, blueprint publication, downstream activity gating, review, and
+teacher response.
+
+```mermaid
+flowchart LR
+    classDef teacher fill:#fef3c7,stroke:#b45309,color:#78350f,stroke-width:1.5px;
+    classDef platform fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a,stroke-width:1.5px;
+    classDef student fill:#dcfce7,stroke:#15803d,color:#14532d,stroke-width:1.5px;
+    classDef insight fill:#ede9fe,stroke:#7c3aed,color:#4c1d95,stroke-width:1.5px;
+
+    subgraph Teacher["Teacher Orchestration"]
+        direction TB
+        T1[Create class and<br/>upload materials]
+        T2[Request blueprint generation<br/>from processed materials]
+        T3[Edit draft approve<br/>and publish blueprint]
+        T4[Generate activity drafts<br/>and create assignments]
+    end
+
+    subgraph Platform["Platform Processing and Control"]
+        direction TB
+        P1[Store files and material rows]
+        P2[Python dispatches queue-backed<br/>material processing]
+        P3[material-worker extracts text<br/>chunks and embeddings]
+        P4[Indexed material context becomes<br/>retrieval-ready]
+        P5[Retrieve indexed context and generate<br/>structured blueprint payload]
+        P6[Persist blueprint snapshot topics<br/>objectives and version state]
+        P7[Published blueprint gates grounded chat<br/>quiz flashcards and chat assignments]
+        P8[Persist assignments submissions<br/>transcripts attempts and feedback]
+        P9[Generate insights snapshots<br/>data-query visuals and teaching brief]
+    end
+
+    subgraph Student["Student Learning Experience"]
+        direction TB
+        S1[Join class and open<br/>student workspace]
+        S2[Study published blueprint and use<br/>grounded open-practice chat]
+        S3[Complete assigned quiz flashcards<br/>and chat activities]
+    end
+
+    subgraph Response["Teacher Review and Teaching Response"]
+        direction TB
+        R1[Review submissions save feedback<br/>and monitor class chat]
+        R2[Inspect topic outcomes risk patterns<br/>and intervention suggestions]
+        R3[Use adaptive teaching brief to choose<br/>the strongest next action]
+        R4[Reassign support work or start<br/>the next blueprint iteration]
+    end
+
+    T1 --> P1 --> P2 --> P3 --> P4
+    P4 --> T2 --> P5 --> P6 --> T3 --> P7
+    P7 --> T4 --> P8
+    P7 --> S1 --> S2 --> S3 --> P8
+    P8 --> R1 --> R2 --> R3 --> R4
+    P8 --> P9 --> R2
+    R4 --> T4
+    R4 --> T2
+
+    class T1,T2,T3,T4 teacher;
+    class P1,P2,P3,P4,P5,P6,P7,P8,P9 platform;
+    class S1,S2,S3 student;
+    class R1,R2,R3,R4 insight;
+```
+
+## 16. Related Docs
 
 - [README.md](README.md) for project overview
 - [DESIGN.md](DESIGN.md) for the broad product + system narrative

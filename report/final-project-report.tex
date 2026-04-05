@@ -416,7 +416,11 @@ hosted environment rather than becoming a one-off demo hack.
 
 \subsection{Blueprint-centered value flow}
 
-The most important end-to-end educational flow is shown in Figure~\ref{fig:value-flow}.
+The most important end-to-end educational flow in the current release is shown in
+Figure~\ref{fig:value-flow}. Unlike the lighter overview used in the repository README, this
+workflow captures the implemented control points that make the platform educationally credible:
+background material readiness, teacher-governed blueprint publication, blueprint-gated activity
+delivery, persisted student work, and teacher-facing instructional response.
 
 \begin{landscape}
 \begin{figure}[p]
@@ -425,22 +429,71 @@ The most important end-to-end educational flow is shown in Figure~\ref{fig:value
     width=0.96\linewidth,
     height=0.82\textheight,
     keepaspectratio
-  ]{README-diagram-02.png}
-  \caption{Blueprint-centered value flow from teacher materials to student learning and review.}
+  ]{ARCHITECTURE-diagram-13.png}
+  \caption{Implemented blueprint-governed classroom workflow from material ingestion to student activity, review, and teaching intervention.}
   \label{fig:value-flow}
 \end{figure}
 \end{landscape}
 
-This flow is central to the platform's pedagogy:
-\begin{enumerate}
-  \item the instructor uploads materials;
-  \item the system processes and embeds those materials;
-  \item the AI generates a structured blueprint;
-  \item the instructor edits and approves the blueprint;
-  \item the published blueprint becomes the basis for activities;
-  \item students learn through grounded interactions;
-  \item instructors review outputs and analyze class performance.
-\end{enumerate}
+\paragraph*{Material ingestion and readiness.}
+The flow begins with teacher-owned classroom content rather than with a prompt box. When an
+instructor uploads PDF, DOCX, or PPTX materials, the web application stores the file and material
+record immediately, but it does not pretend the content is AI-ready at once. Instead, the Next.js
+server action dispatches a background processing request to the Python backend, which enqueues the
+work and can trigger the Supabase \texttt{material-worker} Edge Function. That worker extracts text,
+chunks it, generates embeddings, and persists retrieval-ready material context. This is an important
+implementation choice because it turns uploaded files into operational class knowledge through a
+real asynchronous pipeline, with clear \texttt{processing}, \texttt{ready}, and \texttt{failed}
+states, rather than through a fragile synchronous shortcut.
+
+\paragraph*{Blueprint generation and publication control.}
+Once materials are ready, the platform retrieves indexed class context and sends it to the Python
+backend for structured blueprint generation. The backend does not return informal prose; it returns a
+validated payload containing summary, topics, objectives, prerequisite structure, and related
+teaching metadata. The web layer then persists that output both as a canonical blueprint snapshot and
+as normalized relational records for topics and objectives. Crucially, this generated blueprint is
+not student-facing by default. Teachers edit the draft, validate topic relationships, approve it into
+an overview state, and publish it only when they are satisfied with the course structure. The owner
+controls approval and publication, and the implementation also supports creating a new draft from the
+published version so the live student-facing blueprint remains stable until a revised version is
+explicitly promoted.
+
+\paragraph*{Blueprint-governed learning delivery.}
+After publication, the blueprint becomes the governing instructional artifact for downstream AI
+features. Open-practice class chat, quiz generation, flashcard generation, and teacher-created chat
+assignments all depend on the published blueprint rather than bypassing it. This is where the
+product's core idea becomes concrete: students do not interact with a generic model that improvises
+outside the class context; they interact with AI features constrained by approved course knowledge and
+retrieved material evidence. The implementation distinguishes between activity types in a sensible
+way. Quiz and flashcard activities are generated as editable drafts so teachers can refine the AI
+output before release, while chat assignments publish directly because the teacher is already
+supplying the assignment framing and instructions in one step.
+
+\paragraph*{Student work and teacher review.}
+The workflow then moves from content delivery into accountable classroom participation. When a
+teacher assigns an activity, the system creates assignment records for enrolled students and tracks
+their status across states such as assigned, in progress, submitted, and reviewed. Students study
+the published blueprint, use always-on grounded class chat, and complete quiz, flashcard, and chat
+assignments inside a class-scoped workspace. Their attempts, transcripts, reflections, and feedback
+artifacts are persisted rather than discarded after generation. This persistence matters because it
+allows teachers to inspect actual student work through review screens, save comments and highlights,
+check quiz attempts and outcomes, and monitor always-on class chat activity without interrupting the
+student's learning flow.
+
+\paragraph*{Insights and adaptive teaching response.}
+The loop closes when student activity becomes instructional intelligence rather than raw interaction
+data. Persisted submissions and chat outcomes feed analytics snapshots, visual data-query responses,
+risk indicators, topic-level performance summaries, and intervention suggestions. On top of that, the
+adaptive teaching brief condenses current class evidence into a memo-style teaching response with
+attention items, misconceptions, students to watch, strongest recommended action, and suggested next
+steps. This means the platform is not merely generating classroom content; it is helping the teacher
+interpret what happened and decide what to do next.
+
+Taken together, this flow is the clearest expression of the product's value. The platform does not
+stop at AI-assisted content creation, and it does not treat classroom interaction as disposable chat
+traffic. Instead, it implements a governed instructional cycle in which teacher materials become
+structured class knowledge, that knowledge governs student activity, student activity produces
+reviewable evidence, and that evidence informs the teacher's next instructional move.
 
 \section{System Design}
 
