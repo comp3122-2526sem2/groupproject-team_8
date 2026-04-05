@@ -57,11 +57,6 @@
     ]{#1}%
   }%
 }
-\newcommand{\FeatureEntry}[2]{%
-  \textbf{#1}\par
-  #2\par\medskip
-}
-
 \begin{document}
 \hypersetup{pageanchor=false}
 \pagenumbering{gobble}
@@ -234,16 +229,118 @@ teacher-oriented class workflows where the route logic permits \texttt{teacher} 
 
 \subsection{Feature set}
 
-\FeatureEntry{Authentication}{Email/password sign-in for permanent accounts, a shared \texttt{AuthSurface} for sign-in/sign-up/forgot-password, landing-page modal auth via query params, fallback pages at \texttt{/login}, \texttt{/register}, and \texttt{/forgot-password}, SSR confirmation/recovery handling via \texttt{/auth/confirm}, dedicated \texttt{/reset-password} completion, and guest access via Supabase Anonymous Auth.}
-\FeatureEntry{Class management}{Teacher class creation, student join-by-code, role-aware dashboards, and class-scoped navigation.}
-\FeatureEntry{Materials workflow}{PDF, DOCX, and PPTX upload; asynchronous extraction/chunking/embedding; preview, download, and delete actions.}
-\FeatureEntry{Blueprint workflow}{Draft, overview, and published blueprint lifecycle with teacher editing and publish control.}
-\FeatureEntry{Learning activities}{Chat assignments, quiz assignments, flashcard assignments, plus open-practice class chat.}
-\FeatureEntry{Teacher review}{Assignment review screens for chat, quiz, and flashcards, including feedback-saving flows.}
-\FeatureEntry{Analytics}{Class intelligence dashboard with summaries, charts, student drill-downs, and intervention suggestions.}
-\FeatureEntry{Teaching support}{Adaptive teaching brief widget summarizing what needs attention and recommended next actions.}
-\FeatureEntry{Visual explanation}{Generative canvas support for charts and diagram-style responses in chat and analytics contexts.}
-\FeatureEntry{Guest mode}{Sandbox provisioning, role switching, reset flow, quota management, expiry, and cleanup.}
+Rather than presenting the system as a single AI chatbot, the current release delivers a set of
+user-facing classroom capabilities that work together as a guided teaching and learning platform.
+The most important design decision is that AI is always embedded inside a teacher-controlled class
+workflow: content is grounded in uploaded materials, reviewed through a blueprint, released through
+activities, and then interpreted through feedback and insights. The main implemented feature groups
+are summarised below.
+
+\subsubsection*{Role-Based Access and Entry}
+
+The platform supports distinct entry paths for teachers and students rather than a single generic
+login followed by ad hoc navigation. Permanent users sign in with email and password, complete
+email verification, and then land in role-specific dashboards that match their responsibilities.
+Teachers enter management-oriented flows for classes, materials, blueprints, assignments, and
+insights; students enter a simpler workspace centred on class participation and assigned work.
+
+This access model is implemented as a shared authentication surface rather than duplicated forms.
+The same auth component handles sign-in, sign-up, and password recovery in both the landing-page
+modal and dedicated auth pages, while server-side confirmation and recovery routing supports secure
+email verification and password reset completion. The result is a cleaner product experience for
+users and a more maintainable authentication boundary for the system.
+
+\subsubsection*{Classroom Setup and Participation}
+
+For teachers, the first meaningful product workflow is class setup. A teacher can create a class,
+define its basic metadata, and immediately receive a join code that can be shared with students.
+Students can then join an existing class through a join-by-code flow and are placed directly into a
+class-scoped workspace with the right navigation, permissions, and learning surfaces for their
+role.
+
+This capability is more than a simple CRUD screen. Class creation automatically enrolls the
+creating teacher, join codes are validated through a dedicated backend workflow, and join operations
+are designed to be safely repeatable rather than fragile one-time mutations. Once inside a class,
+the platform keeps users in a consistent class shell, and teachers can even preview the student
+experience in read-only mode without leaving the same classroom context.
+
+\subsubsection*{Material Ingestion and Blueprint Publishing}
+
+The core differentiator of the platform is its material-to-blueprint workflow. Teachers can upload
+PDF, DOCX, and PPTX teaching materials into a class library, monitor their processing status, and
+manage them through preview, download, and delete actions. This turns the class workspace into a
+real content hub rather than a thin wrapper around a text prompt box.
+
+Once materials are available, the platform uses them to generate a structured Course Blueprint that
+becomes the class source of truth. The generated blueprint is not exposed to students immediately:
+teachers edit the draft, adjust topics, objectives, and prerequisite structure, approve it into an
+overview state, and then publish it when ready. This creates a clear editorial checkpoint and makes
+the AI output reviewable rather than automatic.
+
+The implementation depth behind this feature is substantial. Material ingestion is asynchronous,
+with extraction, chunking, and embedding handled in the background so the system does not pretend
+that an uploaded file is instantly AI-ready. Blueprint generation produces structured payloads
+rather than free-form prose, while publication is owner-controlled and version-aware, allowing a
+teacher to create a new draft from the currently published blueprint without losing the stable
+student-facing version until the revised content is explicitly promoted.
+
+\subsubsection*{AI Learning Activities for Students}
+
+After a blueprint is published, the platform turns that curated course knowledge into multiple
+learning experiences for students. Students can use an always-on class chat for open practice, and
+teachers can create formal chat, quiz, and flashcard assignments from the class blueprint. This
+gives the product a broader learning model than a one-dimensional question-answer interface.
+
+Quiz and flashcard activities are generated as editable drafts, allowing teachers to refine the AI
+output before publishing it and assigning it to the whole class. Chat assignments add
+teacher-authored instructions to a guided conversation flow, while student dashboards and class
+views track assigned, in-progress, submitted, and reviewed states. Quiz flows support repeated
+attempts and score tracking, flashcard sessions capture known-versus-needs-review outcomes, and
+chat assignments preserve both the conversation transcript and student reflection for later review.
+
+The student experience is also visually richer than plain text output. In both chat and data-rich
+contexts, the system can attach generative canvas responses such as charts and diagrams when a
+concept is better explained visually. This is especially valuable in STEM learning, where ideas
+such as processes, relationships, and trends are often easier to understand when rendered instead
+of only described.
+
+\subsubsection*{Teacher Review and Instructional Intelligence}
+
+The platform does not stop at content generation or assignment delivery. Teachers can open dedicated
+review screens for chat, quiz, and flashcard assignments to inspect what students actually
+submitted, check completion status across the class, and record feedback. This shifts the product
+from ``AI makes content'' to ``AI supports a full teaching cycle''.
+
+The review experience is implemented with meaningful depth. Teachers can inspect quiz attempts and
+answers, read chat transcripts, review flashcard session outcomes, override or adjust scores where
+appropriate, and save comments plus highlights back to the student record. In parallel, a
+read-only chat monitor lets teachers inspect students' always-on class chats for coaching and
+support without interfering with the student's active workspace.
+
+On top of review, the platform provides a teacher intelligence layer. The class intelligence
+dashboard aggregates quiz performance, topic outcomes, Bloom-level coverage, engagement patterns,
+student drill-downs, and intervention suggestions. A natural-language data-query panel lets a
+teacher ask questions about class performance and receive generated charts, while the adaptive
+teaching brief condenses the current class state into a memo-style summary with attention items,
+students to watch, likely misconceptions, strongest recommended action, and suggested next steps.
+These features are backed by persisted snapshots so teacher-facing summaries remain stable across
+reloads and can be refreshed intentionally instead of regenerating unpredictably on every visit.
+
+\subsubsection*{Guest Sandbox Evaluation Mode}
+
+Guest mode is one of the most distinctive parts of the release because it is implemented as a real
+interactive sandbox rather than a fake product tour. A visitor can enter from the landing page,
+authenticate anonymously, and receive a cloned classroom seeded with demo materials, blueprint
+data, activities, analytics, and chat history. This allows stakeholders to experience realistic
+teacher and student flows without touching live user data.
+
+The sandbox experience includes role switching between teacher and student perspectives, reset
+capability for restarting the demo, and clean handoff into permanent signup when a guest wants to
+become a real user. It is also operationally disciplined: guest sessions are isolated through
+sandbox-scoped data, confined to allowed routes, limited by global session quotas, and expired
+after inactivity or maximum lifetime. A dedicated cleanup workflow then removes guest data,
+associated storage objects, and anonymous auth users so the feature remains sustainable in a
+hosted environment rather than becoming a one-off demo hack.
 
 \subsection{Blueprint-centered value flow}
 
