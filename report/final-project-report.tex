@@ -149,45 +149,86 @@ platform with clear subsystem boundaries and operational considerations.
 
 \subsection{Course and problem context}
 
-The supplied project overview and background materials position the project in the context of
-\emph{Education 4.0}, AI-empowered personalized learning, and the practical pain points faced by
-teachers. The brief explicitly asks teams to avoid building ``just another AI Q\&A app'' and
-instead create a platform with meaningful educational value, differentiated features, and a
-well-considered software engineering process.
+The course brief frames the project in the broader language of \emph{Education 4.0}, personalized
+learning, and AI-supported teaching. That framing is useful, but the repository shows that the real
+product challenge is more concrete: classroom AI must do more than answer questions. Teachers need a
+system that can absorb their materials, structure them into trustworthy course knowledge, turn that
+knowledge into student-facing activities, and still leave the teacher in editorial control.
 
-The background deck highlights several recurring teaching needs:
-\begin{itemize}
-  \item reducing instructor workload in lesson preparation and grading;
-  \item generating learning activities such as quizzes and guided exercises;
-  \item using AI to support more personalized and interactive learning;
-  \item grounding AI output in trustworthy course content rather than generic internet-style chat.
-\end{itemize}
+In practice, the pain points are operational as much as pedagogical. A teacher does not only need
+``an AI''; they need help with lesson preparation, activity creation, assignment delivery, review,
+and follow-up instruction. Students, in turn, do not benefit much from a generic chatbot that has no
+understanding of what their class is actually studying. They need a guided workspace grounded in the
+same materials, objectives, and assignments that the teacher is using.
 
-These needs strongly influenced the design of this system. Rather than exposing a general-purpose
-chatbot, the platform is built around a teacher-controlled workflow where uploaded course materials
-are curated into a blueprint before AI-generated learning activities are released to students.
+This project responds to that problem by treating the class itself as the unit of AI orchestration.
+Uploaded teaching materials become the basis for a structured Course Blueprint, the blueprint becomes
+the source of truth for chat and activities, and the resulting student work flows back into review
+and teacher intelligence surfaces. That is the central product idea that differentiates the system
+from a thin AI wrapper or a one-off classroom demo.
 
 \subsection{Project goals}
 
-Based on the repository documentation and implementation, the core goals of the project are:
-\begin{itemize}
-  \item transform raw teaching materials into structured, reusable course knowledge;
-  \item keep instructors in editorial control of AI outputs;
-  \item provide students with guided, class-specific learning experiences;
-  \item support realistic classroom operations such as assignment creation, review, and feedback;
-  \item demonstrate a robust engineering process including testing, deployment, and iteration.
-\end{itemize}
+Based on the implemented system and supporting documentation, the project goals can be expressed as
+four connected product objectives rather than a flat checklist.
+
+\paragraph*{Structured knowledge creation.}
+The first goal is to transform raw classroom materials into reusable, class-specific knowledge. The
+implemented platform does this through a materials library, asynchronous processing, and AI-assisted
+blueprint generation so that uploaded files become an organised teaching asset instead of a passive
+attachment store.
+
+\paragraph*{Teacher control and trust.}
+The second goal is to keep instructors in control of what AI produces. The blueprint workflow is
+therefore not instant-publish generation: teachers edit the draft, approve it into an overview
+state, and publish it only when it is ready for students. The same idea extends to quiz and
+flashcard drafts, which are editable before assignment.
+
+\paragraph*{Guided student learning.}
+The third goal is to give students a classroom workspace that feels specific to their class rather
+than generic to the internet. The implemented student experience centres on the published blueprint,
+always-on class chat, assignable quiz/flashcard/chat activities, and visible progress states such as
+assigned, in progress, submitted, and reviewed.
+
+\paragraph*{Operational credibility.}
+The fourth goal is to demonstrate that the platform is credible as a real software product, not only
+as a concept. The current repository therefore includes a dedicated backend orchestration layer,
+queue-backed material processing, deployment documentation, automated tests across web and backend
+surfaces, and a sandboxed guest evaluation mode that allows realistic product walkthroughs without
+touching live classroom data.
 
 \subsection{What makes this project distinctive}
 
-Several aspects make this project more substantial than a basic GenAI demo:
-\begin{itemize}
-  \item the \textbf{Course Blueprint lifecycle} introduces an approval and publishing checkpoint;
-  \item \textbf{all AI generation routes through a dedicated Python service}, not ad hoc frontend calls;
-  \item \textbf{material processing is asynchronous and queue-backed}, which is closer to production reality;
-  \item \textbf{teacher intelligence features} extend beyond content generation into analytics and adaptive briefs;
-  \item \textbf{guest mode} is implemented as a true sandboxed experience rather than a fake slideshow demo.
-\end{itemize}
+What makes the project distinctive is not any single AI endpoint, but the way several design choices
+combine into a more complete classroom system.
+
+\paragraph*{Blueprint as the pedagogical control layer.}
+The Course Blueprint is not decorative metadata. It is the product's central teaching object: it is
+generated from class materials, edited by the teacher, versioned through draft/overview/published
+states, and then reused to ground downstream student experiences. This adds a meaningful editorial
+checkpoint that most GenAI classroom demos do not have.
+
+\paragraph*{A full classroom loop rather than isolated generation.}
+The system supports an end-to-end workflow from teacher setup to student activity to teacher review.
+That means AI is used not just to generate content, but to support assignment creation, submission
+handling, feedback, chat monitoring, class insights, and teaching briefs. The product therefore
+models classroom operations, not only content synthesis.
+
+\paragraph*{A deliberate AI orchestration boundary.}
+All AI generation routes through a dedicated Python FastAPI service rather than ad hoc provider calls
+from the web layer. This gives the system a clearer separation of concerns, consistent response
+contracts, and a stronger basis for provider routing, validation, and future extension.
+
+\paragraph*{Production-minded background and persistence design.}
+Material processing is asynchronous and queue-backed, analytics and teaching briefs are snapshot
+oriented, and blueprint publication is treated as a state transition rather than a transient prompt
+result. These choices make the product feel much closer to a deployable platform than to a hackathon
+prototype.
+
+\paragraph*{An authentic guest evaluation path.}
+Guest mode is implemented as a real sandbox classroom with anonymous authentication, seeded demo
+data, role switching, reset, expiry, and cleanup. That is a significantly stronger demonstration
+surface than a static landing page tour or a pre-recorded slideshow of product screens.
 
 \section{System Overview and Implemented Features}
 
@@ -215,17 +256,41 @@ for AI-heavy logic and the Supabase layer provides persistence, storage, securit
 \toprule
 Role & Implemented responsibilities \\
 \midrule
-Instructor & Create classes, upload materials, generate and curate blueprints, create assignments, review student work, monitor chat activity, inspect class insights, use the adaptive teaching brief, and preview the student experience. \\
-Student & Join classes using a join code, access the published blueprint, use always-on AI chat, complete chat/quiz/flashcards assignments, and track progress from the student dashboard. \\
-Guest & Enter a sandbox demo, explore both teacher and student views through role switching, and safely evaluate the product without touching real user data. \\
+Instructor & Create and manage classes, upload materials, curate and publish blueprints, generate and assign activities, review submissions, monitor chat behaviour, inspect insights, use the adaptive teaching brief, and preview the student journey from within the class workspace. \\
+Student & Join classes with a join code, study the published blueprint, use always-on class chat, complete assigned chat/quiz/flashcard activities, and track current, upcoming, completed, and reviewed work from the student dashboard. \\
+Guest & Enter a sandbox classroom through anonymous auth, explore seeded teacher and student workflows through role switching, reset the demo when needed, and evaluate the product without affecting real user data. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
+These user groups are not theoretical labels; they map directly to different product surfaces and
+navigation models in the implementation.
+
+\paragraph*{Instructor.}
+The instructor experience is creation-first and decision-heavy. Teachers land in a dedicated
+dashboard, see their owned and assistant classes, and move into a class shell where they can upload
+materials, generate blueprints, create assignments, monitor student chats, and interpret class
+insights. The product also supports preview-as-student mode, which lets a teacher inspect the
+student-facing experience without leaving the classroom context.
+
+\paragraph*{Student.}
+The student experience is intentionally simpler and more guided. Students enter through a separate
+dashboard, join classes through join codes, and then work inside a class workspace organised around
+the published blueprint, always-on chat, and assigned activities. Their dashboard and class pages
+emphasise due work, progress state, and reviewed feedback rather than creation or analytics tools.
+
+\paragraph*{Guest.}
+The guest experience is designed for realistic evaluation rather than passive observation. Guests
+authenticate anonymously, receive a seeded sandbox classroom, and can switch between teacher and
+student perspectives, reset the environment, or convert to a real signup path. Middleware and
+sandbox state keep the guest confined to the sandbox classroom so the demo remains safe and
+operationally believable.
+
 In addition to these primary personas, the implementation also supports a class-scoped
 \textbf{teaching assistant (TA)} authorization role. TA is not exposed as a separate permanent
 signup account type; instead, it exists as an enrollment-level role that can access the same
-teacher-oriented class workflows where the route logic permits \texttt{teacher} or \texttt{ta}.
+teacher-oriented class workflows where route and service logic explicitly permit \texttt{teacher}
+or \texttt{ta}.
 
 \subsection{Feature set}
 
