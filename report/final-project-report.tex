@@ -857,7 +857,7 @@ product quality remained fully human.
 
 \subsection{Testing strategy}
 
-The repository implements a layered testing strategy rather than relying on only one test type.
+The platform uses a layered testing strategy rather than relying on a single proof mechanism.
 
 \begin{table}[H]
 \centering
@@ -866,26 +866,26 @@ The repository implements a layered testing strategy rather than relying on only
 \toprule
 Layer & What it covers & Evidence in repo \\
 \midrule
-Web unit and integration tests & Server actions, auth flows, route guards, material actions, blueprint logic, chat flows, guest helpers, UI primitives, validation helpers & 61 test files under \texttt{web/src} \\
-Backend unit tests & Providers, schemas, class flows, blueprint generation, quiz, flashcards, materials, analytics, chat workspace, guest rate limiting & 20 Python test files under \texttt{backend/tests} \\
-End-to-end tests & Teacher navigation, student navigation, login, join class, settings, sign-out, and guest entry against a deployed environment & 10 Playwright specs under \texttt{tests/e2e} \\
+Web unit and integration tests & Server actions, auth flows, route guards, material actions, blueprint logic, chat flows, guest helpers, UI primitives, and validation helpers & 60 test files under \texttt{web/src} \\
+Backend unit tests & Providers, schemas, class flows, blueprint generation, quiz, flashcards, materials, analytics, chat workspace, and guest rate limiting & 17 Python test files under \texttt{backend/tests} \\
+End-to-end tests & Teacher navigation, student navigation, login, join class, settings, sign-out, and guest entry against a deployed environment & 9 Playwright specs under \texttt{tests/e2e} \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
 Representative quality signals include:
 \begin{itemize}
-  \item guest middleware tests and guest sandbox tests;
+  \item guest middleware tests plus guest sandbox and quota tests;
   \item blueprint action tests;
-  \item materials extraction and retrieval tests;
+  \item materials extraction, preview, retrieval, and action tests;
   \item chat generation, compaction, and workspace tests;
-  \item analytics and teaching brief action tests;
-  \item Playwright flows for both teacher and student navigation.
+  \item analytics, insights, and teaching brief action tests;
+  \item Playwright flows across teacher, student, settings, auth sign-out, and guest entry.
 \end{itemize}
 
 \subsection{Why the testing approach is appropriate}
 
-This testing distribution is appropriate for the architecture:
+This test distribution matches the system's runtime boundaries:
 \begin{itemize}
   \item unit tests catch domain logic regressions close to the code;
   \item web integration tests validate server actions and route behavior;
@@ -893,13 +893,16 @@ This testing distribution is appropriate for the architecture:
   \item Playwright tests confirm that the deployed user flows still work end to end.
 \end{itemize}
 
-For a project involving multiple services and stateful workflows, this layered approach is far more
-credible than relying on only manual demonstration.
+For a system that spans a Next.js application, a separate FastAPI service, hosted Supabase state,
+and queue-backed workers, this layered model is the right testing shape. It contains regressions at
+the domain layer, verifies critical server-side workflow behavior, and still proves that the hosted
+teacher, student, and guest journeys function correctly after deployment.
 
 \subsection{Deployment topology}
 
-The deployed system consists of a frontend deployment, a separate backend deployment, and a hosted
-Supabase project. Figure~\ref{fig:deployment-topology} captures this structure.
+The hosted platform is deployed as three coordinated surfaces: a frontend deployment, a separate
+Python backend deployment, and a hosted Supabase project. Figure~\ref{fig:deployment-topology}
+captures this structure.
 
 \begin{figure}[H]
   \centering
@@ -908,13 +911,19 @@ Supabase project. Figure~\ref{fig:deployment-topology} captures this structure.
   \label{fig:deployment-topology}
 \end{figure}
 
-This split has practical benefits:
+This topology gives the product clearer operational boundaries:
 \begin{itemize}
-  \item frontend issues can be distinguished from backend issues;
-  \item AI orchestration can evolve independently from the UI deployment;
-  \item Supabase-specific operational tasks such as migrations and Edge Function secrets remain explicit;
-  \item the team can test preview or staging environments in a more controlled way.
+  \item frontend behavior can be separated from backend or data-plane faults during debugging;
+  \item AI orchestration can evolve independently from the web deployment surface;
+  \item Supabase-specific responsibilities such as migrations, Edge Functions, and secrets remain explicit;
+  \item preview and staging environments can be aligned more carefully across the stack.
 \end{itemize}
+
+The deployment runbook also makes clear that this is not a nominal split. Both \texttt{web/} and
+\texttt{backend/} carry Vercel project linkage, while Supabase hosts authentication, PostgreSQL,
+storage, RLS policies, SQL dispatch helpers, and the \texttt{material-worker} and
+\texttt{guest-sandbox-cleanup} Edge Functions. In other words, the deployed system is genuinely
+multi-surface, not a frontend-plus-database simplification.
 
 \subsection{Deployment process}
 
@@ -923,36 +932,42 @@ The documented deployment workflow includes:
   \item configuring one Supabase project per environment;
   \item applying the active migration set;
   \item deploying the \texttt{material-worker} and \texttt{guest-sandbox-cleanup} Edge Functions;
-  \item configuring Edge Function secrets and Vault-backed values;
+  \item configuring Edge Function secrets plus the Vault-backed values used by SQL-side dispatch;
   \item deploying the Python backend;
   \item deploying the web application;
   \item running post-deploy smoke tests for auth, teacher flows, student flows, insights, and guest mode.
 \end{enumerate}
 
-Operationally, this is a mature approach for a course project because it recognizes that deployment
-is not just ``push frontend to Vercel''; the data plane and async workers also have to be correct.
-For guest mode specifically, deployment also has to keep the Supabase quota RPCs, backend guest-limit
-environment variables, and cleanup worker aligned so that session caps, inactivity expiry, and
-concurrency guardrails behave consistently across the whole stack.
+Operationally, this matters because deployment is not just a frontend publish. The schema, data
+plane, background workers, backend environment contract, and post-deploy smoke checks all have to
+line up before the product is truly usable. The material pipeline, in particular, depends on queue
+dispatch, worker execution, embedding configuration, and secret placement across multiple surfaces.
+
+Guest mode makes that need for alignment even more visible. The hosted environment has to keep the
+Supabase quota RPCs, guest schema, backend guest-limit environment variables, anonymous-auth
+configuration, and cleanup worker synchronized so that session admission, inactivity expiry, and
+AI-concurrency guardrails behave consistently across the stack.
 
 \subsection{Database evolution}
 
-The current migration history shows 23 active migrations, which is another sign that the project
-evolved iteratively rather than remaining static after an initial schema dump.
+The active schema history now contains 23 migrations, which documents iterative platform evolution
+rather than a static schema frozen after the first implementation pass.
 
 Major migration themes include:
 \begin{itemize}
   \item initial schema and RLS foundation;
   \item quiz integrity and auth hardening;
-  \item canonical blueprint snapshots;
-  \item always-on class chat and compaction;
+  \item canonical blueprint snapshots and publication hardening;
+  \item always-on class chat and context compaction;
   \item queue-backed material processing;
   \item class insights and teaching brief snapshots;
   \item guest mode schema, seed data, cleanup, and quota redesign.
 \end{itemize}
 
-This migration history is important because it mirrors the product's evolution in a traceable,
-reviewable form.
+This migration history matters because it records the product's growth in a traceable and reviewable
+form. The database changes do not read like generic table churn; they align closely with major
+capability additions such as blueprint governance, persistent chat, async material processing,
+teacher intelligence, and sandboxed guest evaluation.
 
 \section{Lessons Learned and Reflection}
 
