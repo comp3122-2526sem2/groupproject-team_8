@@ -971,77 +971,136 @@ teacher intelligence, and sandboxed guest evaluation.
 
 \section{Lessons Learned and Reflection}
 
-\subsection{Technical lessons}
+\subsection{Challenges that sharpened the product}
 
-The repository's maintained documentation highlights several concrete lessons that are worth
-reflecting on.
+The most useful lesson from the development record is that the hardest parts of the platform were
+not always the most visible ones. On the surface, the system looks like a clean teacher-student
+learning product with AI assistance. In the commit history, however, the real engineering effort is
+visible in the repeated cycles of correction, hardening, and redesign that turned that product idea
+into something dependable. The guest-mode work is the clearest example. What appears in the UI as a
+simple ``continue as guest'' action ultimately required anonymous authentication, sandbox cloning,
+quota governance, expiry handling, cleanup flows, backend ownership checks, and later a redesign
+from per-IP entry limiting to a global session-quota model. That progression is important because it
+shows that the team did not stop at a demo-friendly implementation; it kept refining the subsystem
+until it behaved like a controlled production feature.
 
-\begin{itemize}
-  \item \textbf{A clean architecture boundary matters.} Routing all AI through the Python backend
-  keeps provider-specific complexity out of the UI and gives the system a stable application-facing
-  contract.
+Authentication and account recovery taught a similar lesson about trust. The shared auth surface now
+looks cohesive, but the repository history shows that getting there required several iterations:
+home-first auth redesign, resend and confirmation recovery flows, guest-signup loop fixes, branded
+email templates, and OTP-based password reauthentication for sensitive settings changes. The lesson
+here is that user trust is built through a chain of small reliability decisions, not through one
+large feature. In an education platform, where teachers and students depend on predictable access,
+these flows are part of the core product, not peripheral polish.
 
-  \item \textbf{Async processing is necessary for realistic content pipelines.} Material extraction
-  and embedding do not belong in a naive synchronous upload request if the goal is a reliable system.
+Another lesson was that multi-surface deployment demands operational discipline very early. Once the
+platform was split across the Next.js web app, the FastAPI backend, Supabase storage and database,
+and two Edge Functions, configuration mistakes stopped being minor inconveniences and became real
+delivery risks. The repository's maintained notes about \texttt{trust\_env=False}, Edge Function
+secret placement, queue-worker configuration, and environment alignment are not incidental trivia.
+They record issues that only become visible when a system is actually being deployed and debugged
+across several runtime boundaries. The team effectively learned that architecture is only as strong
+as its operational contract.
 
-  \item \textbf{Guest mode is harder than it looks.} A believable demo mode requires session
-  quotas, expiry, cleanup, sandbox isolation, and backend-side ownership checks. A demo that looks
-  simple in the UI can still be architecturally complex.
+Finally, the project reinforced that AI features become dependable only when they are normalized
+into product workflows. Blueprint generation, analytics narratives, teaching briefs, and chat
+responses could not remain raw model outputs. They had to be validated, cached, persisted,
+versioned, or constrained by class context before they were trustworthy enough for real use. The
+analytics fixes, teaching-brief cleanup, chat compaction logic, and blueprint publication controls
+all point to the same lesson: GenAI becomes valuable in a learning system only after software
+engineering disciplines it into repeatable application behavior.
 
-  \item \textbf{Deployment secrets must live in the right place.} The project explicitly notes that
-  Supabase Edge Functions cannot rely on Vercel secrets or Supabase Vault alone; function-level
-  secrets must be configured in Supabase Edge Function Secrets.
+\subsection{Advantages proven during development}
 
-  \item \textbf{Subtle browser and CSS issues can become product bugs.} Examples in the repository
-  include iframe preview limitations caused by storage response headers and dialog-centering issues
-  caused by Tailwind v4's use of the standalone CSS \texttt{translate} property.
-\end{itemize}
+The strongest advantage proven during development is the product's coherence. The repository did not
+drift into a loose collection of unrelated AI experiments because the Course Blueprint stayed at the
+center of the design. Materials ingestion, blueprint editing, activity generation, student chat,
+review, and teacher insight surfaces all continue to connect back to the same instructional object.
+That coherence is visible not only in the current codebase but also in the sequence of feature
+delivery: new capabilities were repeatedly added by extending the blueprint-centered learning loop
+rather than by bypassing it.
 
-\subsection{Process lessons}
+A second proven advantage is the architecture boundary between interface, orchestration, and data
+surfaces. During development, the team was able to redesign auth, harden guest access, improve
+analytics, extend teaching-brief logic, and refine material processing without collapsing the entire
+system into one tangled codepath. The dedicated Python backend, the queue-backed material worker,
+and the Supabase policy and migration layer gave the product room to evolve. That separation reduced
+coupling and made later refinements more manageable, especially once the project moved beyond early
+vertical slices into more operational work.
 
-From a software engineering process perspective, several lessons stand out:
-\begin{itemize}
-  \item keeping design, architecture, deployment, and UI docs current reduces confusion late in the project;
-  \item documentation is especially valuable when a project spans frontend, backend, and database layers;
-  \item a branch-and-merge workflow helps isolate major features such as guest mode and auth redesign;
-  \item testing should expand together with complexity, not after the system is already unstable.
-\end{itemize}
+The development record also shows a clear advantage in teacher-centered product thinking. Many
+student-facing educational demos become generic once they add AI, but this project repeatedly
+strengthened the instructor's side of the system instead: editable blueprint governance, assignment
+review flows, a teacher chat monitor, adaptive teaching briefs, class intelligence snapshots, and
+student-preview mode inside the same class shell. That matters because it gives the platform a
+practical classroom identity. The product is not merely helping students ask questions; it is also
+helping teachers prepare, supervise, interpret, and intervene.
 
-\subsection{What the project did well}
+Another advantage that became more convincing over time is demonstrability. Guest mode is not a
+static showcase or a scripted walkthrough. It is a real sandbox that clones seeded class data,
+supports role switching, and cleans up after itself. That is a strategic advantage for an academic
+project because it makes the system easier to evaluate honestly. A reviewer can interact with the
+same core flows that real users would see, while the system still preserves data isolation and
+resource control.
 
-In its current form, the project demonstrates several strengths:
-\begin{itemize}
-  \item a coherent product concept instead of a scattered list of AI features;
-  \item strong teacher-centered workflow design;
-  \item real effort on UI quality and navigation clarity;
-  \item a credible multi-service architecture;
-  \item meaningful testing and deployment documentation.
-\end{itemize}
+Finally, the project benefited from disciplined documentation and verification. The current repo
+contains aligned design, architecture, deployment, UI, and subsystem guides, plus layered web,
+backend, and end-to-end tests. The commit history shows that documentation was updated alongside
+major changes rather than being postponed until submission week. That habit reduced drift between
+what the system claimed to do and what it actually did, which is one of the clearest signs of
+engineering maturity in the repository.
 
-\subsection{Next-stage expansion opportunities}
+\subsection{Reasonable next-stage directions}
 
-As a platform with a strong core already in place, the project also has clear next-stage
-expansion paths:
-\begin{itemize}
-  \item richer operator tooling around observability, release health, and administrative reporting;
-  \item broader activity formats beyond the current chat, quiz, and flashcards set;
-  \item deeper analytics and intervention workflows for longitudinal classroom support;
-  \item further packaging of deployment and runbook automation for smoother environment provisioning.
-\end{itemize}
+The most practical next step for the platform is to connect insight more directly to follow-up
+teaching action. The current system can already identify class weaknesses, summarize misconceptions,
+and recommend next steps through the teaching brief and class intelligence dashboard. A sensible
+extension would be to let those recommendations lead into teacher-reviewable follow-up work such as
+targeted quizzes, intervention flashcard sets, or focused chat assignments tied to weaker topics.
+Because the platform already has blueprint grounding, analytics snapshots, assignment flows, and
+editable generation surfaces, this would extend the current design rather than introduce a new
+product direction.
+
+Another reasonable direction is to broaden analytics from a single-class view into a more
+longitudinal teaching support view. At present, the system is already capable of summarizing one
+class coherently. A later iteration could help teachers compare patterns across classes, track
+recurring misconceptions over time, and relate assigned activities more clearly to later student
+improvement. This would remain consistent with the current teacher-support focus of the platform.
+
+The third direction is operational rather than pedagogical: stronger visibility into system health.
+The platform now includes provider fallback, queue-backed workers, Edge Functions, sandbox quotas,
+background cleanup, and multi-surface deployment concerns. Over time, it would be useful to expose
+worker status, guest-capacity pressure, provider failures, and environment alignment checks more
+explicitly. That would not change the classroom workflow directly, but it would make the system
+easier to operate and maintain as the project continues to mature.
 
 \section{Conclusion}
 
-The current repository demonstrates a serious course project with a clear educational purpose,
-a layered architecture, meaningful GenAI integration, and a credible software engineering process.
-Its strongest design choice is the decision to center the product on a teacher-curated Course
-Blueprint rather than on generic AI chat alone. That decision gives the entire system coherence:
-materials, activities, student chat, review, and analytics all connect back to the same core object.
+This project was not designed as a generic AI study tool with classroom branding added afterwards.
+It was designed around a more specific educational idea: teachers should be able to turn their own
+materials into a Course Blueprint, keep editorial control over what is published, and then use that
+blueprint to guide what students learn, what the AI can generate, and what the teacher can later
+review. That choice gave the platform a coherent center. Materials, activities, chat, review,
+teaching brief, and analytics all connect back to the same class-specific instructional object.
 
-Equally important, the project goes beyond feature implementation and addresses the concerns that
-often separate prototypes from robust systems: asynchronous processing, security boundaries,
-role-aware access control, test coverage, deployment topology, and realistic demo-mode isolation.
-For a final project, this makes the platform not only functional, but also defensible from a
-software engineering perspective.
+The current repository is also stronger than a one-path prototype because the implementation
+supports that idea at system level. The platform combines a dedicated Python backend for AI
+orchestration, queue-backed material processing through Supabase, policy-enforced data access,
+teacher-facing insight snapshots, and a guest sandbox model that allows realistic evaluation without
+using real classroom data. These choices add complexity, but they also make the project more
+credible as a working software system.
+
+The development process also showed that the quality of the final result depended heavily on
+hardening and revision. Guest mode needed redesign and quota control. Authentication and recovery
+needed repeated refinement. Analytics, chat, and material flows needed to be normalized so they
+behaved like stable product features rather than raw AI outputs. This was an important part of the
+project outcome: progress came not only from adding features, but from improving reliability,
+consistency, and maintainability.
+
+Taken together, the platform represents a serious and well-scoped course group project. It has a
+clear educational purpose, a credible technical architecture, meaningful GenAI integration, and a
+development record that shows real attention to testing, documentation, and deployment practice.
+The current implementation also leaves room for careful future improvement without overstating what
+has already been achieved.
 
 \newpage
 \section{User and Operations Manual}
