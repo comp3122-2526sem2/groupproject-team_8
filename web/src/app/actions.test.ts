@@ -19,6 +19,7 @@ vi.mock("next/navigation", () => ({
 
 const {
   supabaseAuth,
+  supabaseFromMock,
   getAuthContextMock,
   discardGuestSandboxMock,
 } = vi.hoisted(() => ({
@@ -32,6 +33,7 @@ const {
     signUp: vi.fn(),
     updateUser: vi.fn(),
   },
+  supabaseFromMock: vi.fn(),
   getAuthContextMock: vi.fn(),
   discardGuestSandboxMock: vi.fn(),
 }));
@@ -39,6 +41,7 @@ const {
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: () => ({
     auth: supabaseAuth,
+    from: supabaseFromMock,
   }),
 }));
 
@@ -72,6 +75,19 @@ async function expectRedirect(action: () => Promise<void> | void, path: string |
   }
 }
 
+function makeBuilder(result: unknown) {
+  const builder: Record<string, unknown> = {};
+  const resolveResult = () => result;
+  builder.select = vi.fn(() => builder);
+  builder.eq = vi.fn(() => builder);
+  builder.maybeSingle = vi.fn(async () => resolveResult());
+  return builder as {
+    select: () => typeof builder;
+    eq: () => typeof builder;
+    maybeSingle: () => Promise<unknown>;
+  };
+}
+
 describe("auth actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -79,6 +95,7 @@ describe("auth actions", () => {
     delete process.env.NEXT_PUBLIC_VERCEL_URL;
     delete process.env.VERCEL_URL;
     supabaseAuth.getSession.mockResolvedValue({ data: { session: null } });
+    supabaseFromMock.mockReturnValue(makeBuilder({ data: null, error: null }));
     getAuthContextMock.mockResolvedValue({
       isGuest: false,
       sandboxId: null,
@@ -123,6 +140,28 @@ describe("auth actions", () => {
 
     await expectRedirect(() => signIn(formData), "/dashboard");
     expect(redirect).toHaveBeenCalled();
+  });
+
+  it("redirects teachers to the dashboard with a post-login cleanup token", async () => {
+    supabaseAuth.signInWithPassword.mockResolvedValueOnce({
+      data: { user: { id: "teacher-1" } },
+      error: null,
+    });
+    supabaseFromMock.mockReturnValueOnce(
+      makeBuilder({
+        data: { account_type: "teacher" },
+        error: null,
+      }),
+    );
+
+    const formData = new FormData();
+    formData.set("email", "teacher@example.com");
+    formData.set("password", "goodpass");
+
+    await expectRedirect(
+      () => signIn(formData),
+      /\/teacher\/dashboard\?post_login_cleanup=[^;]+/,
+    );
   });
 
   it("falls back to the raw sign up error for non-duplicate failures", async () => {

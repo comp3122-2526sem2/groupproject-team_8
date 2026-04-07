@@ -2,6 +2,7 @@ import Link from "next/link";
 import DashboardHashRedirect from "@/app/components/DashboardHashRedirect";
 import EmptyStateCard from "@/app/components/EmptyStateCard";
 import RoleAppShell from "@/app/components/RoleAppShell";
+import PostLoginMaterialRecovery from "@/app/teacher/dashboard/PostLoginMaterialRecovery";
 import { AppIcons } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -96,6 +97,7 @@ export default async function TeacherDashboardPage() {
       userDisplayName={profile.display_name}
     >
       <DashboardHashRedirect classesHref="/teacher/classes" />
+      <PostLoginMaterialRecovery />
       <main className="mx-auto max-w-5xl p-6 pt-16 page-enter">
         {/* ── Header ── */}
         <header className="flex flex-wrap items-start justify-between gap-6">

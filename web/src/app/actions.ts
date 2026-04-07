@@ -173,7 +173,11 @@ export async function signIn(formData: FormData) {
       .maybeSingle<{ account_type: "teacher" | "student" | null }>();
 
     if (profile?.account_type === "teacher") {
-      redirect("/teacher/dashboard");
+      redirect(
+        buildRedirectUrl("/teacher/dashboard", {
+          post_login_cleanup: crypto.randomUUID(),
+        }),
+      );
     }
     if (profile?.account_type === "student") {
       redirect("/student/dashboard");

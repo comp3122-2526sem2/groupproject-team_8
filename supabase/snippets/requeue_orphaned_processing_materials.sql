@@ -1,5 +1,6 @@
 -- Requeue materials stuck in `processing` without an active job.
--- Run once after deploying the direct-upload + dispatch hardening fixes.
+-- Manual/global admin backstop. The app now also runs a user-scoped recovery
+-- pass for teachers after login via `recover_stuck_materials_for_current_user`.
 
 with orphaned_materials as (
   select
