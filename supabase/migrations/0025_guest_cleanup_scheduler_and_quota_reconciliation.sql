@@ -296,7 +296,7 @@ begin
 
   perform cron.schedule(
     'guest-sandbox-cleanup-dispatch-5m',
-    '5 minutes',
+    '*/5 * * * *',
     $job$select public.run_guest_sandbox_cleanup_dispatch();$job$
   );
 end;
