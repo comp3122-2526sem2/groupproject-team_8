@@ -9,12 +9,10 @@ import {
   prepareMaterialUpload,
   triggerMaterialProcessing,
 } from "@/app/classes/actions";
-import { AppIcons } from "@/components/icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { MAX_MATERIAL_BYTES } from "@/lib/materials/constants";
 
@@ -41,7 +39,7 @@ function SubmitButton({ fileCount }: { fileCount: number }) {
   );
 }
 
-function UploadProgress() {
+function UploadStatusAnnouncement() {
   const { pending } = useFormStatus();
 
   if (!pending) {
@@ -49,13 +47,9 @@ function UploadProgress() {
   }
 
   return (
-    <div className="space-y-2" aria-live="polite">
-      <div className="flex items-center gap-3 text-xs text-ui-muted">
-        <AppIcons.loading className="h-4 w-4 animate-spin" />
-        Uploading your materials. Large files can take a minute.
-      </div>
-      <Progress value={65} />
-    </div>
+    <p className="sr-only" role="status" aria-live="polite">
+      Uploading your materials. Large files can take a minute.
+    </p>
   );
 }
 
@@ -306,7 +300,7 @@ export default function MaterialUploadForm({ classId }: MaterialUploadFormProps)
         />
       </div>
       <SubmitButton fileCount={pendingFilesCount(files)} />
-      <UploadProgress />
+      <UploadStatusAnnouncement />
     </form>
   );
 }

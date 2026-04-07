@@ -233,7 +233,14 @@ export default function FileUploadZone({
                       ) : null}
                       {file.status === "uploading" ? (
                         <div className="mt-2">
-                          <Progress value={file.progress} />
+                          <Progress
+                            value={file.progress}
+                            role="progressbar"
+                            aria-label={`${file.file.name} upload progress`}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={Math.round(file.progress)}
+                          />
                         </div>
                       ) : null}
                     </div>
