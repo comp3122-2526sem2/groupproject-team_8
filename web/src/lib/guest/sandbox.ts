@@ -238,24 +238,46 @@ export async function provisionGuestSandboxWithOptions(): Promise<GuestSandboxRe
   // --- Inspect existing session ---
 
   const {
-    data: { session: existingSession },
-  } = await supabase.auth.getSession();
-  const existingUser = existingSession?.user ?? null;
-  const existingUserIsAnonymous = isAnonymousUser(existingUser);
+    data: { user: existingUser },
+    error: existingUserError,
+  } = await supabase.auth.getUser();
+  const existingUserErrorMessage = existingUserError?.message?.toLowerCase() ?? "";
+  const existingUserMissing =
+    existingUserError?.status === 401 ||
+    existingUserErrorMessage.includes("auth session missing") ||
+    existingUserErrorMessage.includes("session missing") ||
+    existingUserErrorMessage.includes("invalid jwt") ||
+    existingUserErrorMessage.includes("user from sub claim in JWT does not exist");
+
+  if (existingUserError && !existingUserMissing) {
+    return {
+      ok: false,
+      code: "guest-session-check-failed",
+      error: "We couldn't verify your current guest session. Please try again.",
+      reason: "existing-user-check",
+    };
+  }
+
+  if (existingUserMissing) {
+    await supabase.auth.signOut();
+  }
+
+  const liveExistingUser = existingUserMissing ? null : existingUser ?? null;
+  const existingUserIsAnonymous = isAnonymousUser(liveExistingUser);
   // Carry the anonymous user id forward so we can skip a new signInAnonymously()
   // call if a valid anonymous session already exists.
-  let guestUserId = existingUserIsAnonymous ? existingUser?.id ?? null : null;
+  let guestUserId = existingUserIsAnonymous ? liveExistingUser?.id ?? null : null;
   // Set to true only when *this invocation* created the anonymous Auth user,
   // so we know to undo it if a later step fails (prevents orphaned Auth rows).
   let shouldSignOutOnFailure = false;
 
-  if (existingUser) {
+  if (liveExistingUser) {
     // --- Check for an existing sandbox on the current user ---
 
     const { data: existingSandbox, error: existingSandboxError } = await supabase
       .from("guest_sandboxes")
       .select("id,class_id,status,guest_role,expires_at,last_seen_at")
-      .eq("user_id", existingUser.id)
+      .eq("user_id", liveExistingUser.id)
       .eq("status", "active")
       .maybeSingle<ActiveSandboxRow>();
 
@@ -272,7 +294,7 @@ export async function provisionGuestSandboxWithOptions(): Promise<GuestSandboxRe
     if (!latestSandbox) {
       const { data: latestSandboxData, error: latestSandboxError } = await loadLatestGuestSandbox(
         supabase,
-        existingUser.id,
+        liveExistingUser.id,
       );
 
       if (latestSandboxError && !isMaybeSingleNoRowsError(latestSandboxError)) {
@@ -355,7 +377,7 @@ export async function provisionGuestSandboxWithOptions(): Promise<GuestSandboxRe
     if (existingSandbox?.id && !isGuestSandboxExpired(existingSandbox)) {
       const { data: classId, error: cloneError } = await supabase.rpc("clone_guest_sandbox", {
         p_sandbox_id: existingSandbox.id,
-        p_guest_user_id: existingUser.id,
+        p_guest_user_id: liveExistingUser.id,
       });
 
       if (cloneError || typeof classId !== "string" || !classId) {

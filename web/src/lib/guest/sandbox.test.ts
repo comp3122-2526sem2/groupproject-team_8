@@ -75,20 +75,44 @@ function mockSupabase(overrides: Partial<Record<string, unknown>> = {}) {
   const adminBucket = {
     remove: vi.fn().mockResolvedValue({ error: null }),
   };
-  const supabase = {
-    auth: {
-      getSession: vi.fn().mockResolvedValue({
+  const authOverrides =
+    (overrides.auth as
+      | Partial<{
+          getSession: ReturnType<typeof vi.fn>;
+          getUser: ReturnType<typeof vi.fn>;
+          signInAnonymously: ReturnType<typeof vi.fn>;
+          signOut: ReturnType<typeof vi.fn>;
+        }>
+      | undefined) ?? {};
+  const auth = {
+    getSession:
+      authOverrides.getSession ??
+      vi.fn().mockResolvedValue({
         data: { session: null },
       }),
-      signInAnonymously: vi.fn().mockResolvedValue({
+    getUser:
+      authOverrides.getUser ??
+      vi.fn().mockImplementation(async () => {
+        const sessionResult = await auth.getSession();
+        return {
+          data: { user: sessionResult.data.session?.user ?? null },
+          error: null,
+        };
+      }),
+    signInAnonymously:
+      authOverrides.signInAnonymously ??
+      vi.fn().mockResolvedValue({
         data: {
           user: { id: "anon-1" },
           session: { access_token: "guest-token" },
         },
         error: null,
       }),
-      signOut: vi.fn().mockResolvedValue({ error: null }),
-    },
+    signOut: authOverrides.signOut ?? vi.fn().mockResolvedValue({ error: null }),
+  };
+  const { auth: _authOverride, ...supabaseOverrides } = overrides;
+  const supabase = {
+    auth,
     from: vi.fn().mockImplementation((table: string) => {
       if (table === "guest_sandboxes") {
         return guestSandboxBuilder;
@@ -105,7 +129,7 @@ function mockSupabase(overrides: Partial<Record<string, unknown>> = {}) {
       data: "class-1",
       error: null,
     }),
-    ...overrides,
+    ...supabaseOverrides,
   };
 
   vi.mocked(createServerSupabaseClient).mockResolvedValue(supabase as never);
@@ -345,6 +369,43 @@ describe("provisionGuestSandbox", () => {
         }
         return makeMutableBuilder({ data: null });
       }),
+    });
+
+    const result = await provisionGuestSandbox();
+
+    expect(supabase.auth.signOut).toHaveBeenCalled();
+    expect(supabase.auth.signInAnonymously).toHaveBeenCalled();
+    expect(result).toEqual({
+      ok: true,
+      classId: "class-1",
+      sandboxId: expect.any(String),
+    });
+  });
+
+  it("rotates a stale anonymous cookie when the underlying auth user was deleted", async () => {
+    const { supabase } = mockSupabase({
+      auth: {
+        getSession: vi.fn().mockResolvedValue({
+          data: {
+            session: {
+              access_token: "stale-token",
+              user: { id: "anon-stale", is_anonymous: true },
+            },
+          },
+        }),
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: null },
+          error: { message: "User from sub claim in JWT does not exist", status: 401 },
+        }),
+        signInAnonymously: vi.fn().mockResolvedValue({
+          data: {
+            user: { id: "anon-fresh", is_anonymous: true },
+            session: { access_token: "fresh-token" },
+          },
+          error: null,
+        }),
+        signOut: vi.fn().mockResolvedValue({ error: null }),
+      },
     });
 
     const result = await provisionGuestSandbox();
