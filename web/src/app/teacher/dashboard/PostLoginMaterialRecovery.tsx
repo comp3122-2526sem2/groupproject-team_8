@@ -4,8 +4,9 @@ import { useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 export const POST_LOGIN_CLEANUP_PARAM = "post_login_cleanup";
+const inFlightRecoveryKeys = new Set<string>();
 
-type PostLoginRecoveryStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+type PostLoginRecoveryStorage = Pick<Storage, "getItem" | "setItem">;
 
 type TriggerPostLoginMaterialRecoveryOptions = {
   pathname: string;
@@ -26,11 +27,11 @@ export async function triggerPostLoginMaterialRecovery(
 
   const storageKey = `post-login-material-recovery:${cleanupToken}`;
   const existingState = options.storage?.getItem(storageKey);
-  if (existingState === "pending" || existingState === "done") {
+  if (existingState === "done" || inFlightRecoveryKeys.has(storageKey)) {
     return;
   }
 
-  options.storage?.setItem(storageKey, "pending");
+  inFlightRecoveryKeys.add(storageKey);
 
   try {
     await options.sendRecoveryRequest();
@@ -41,8 +42,9 @@ export async function triggerPostLoginMaterialRecovery(
     const query = nextParams.toString();
     options.replace(query.length > 0 ? `${options.pathname}?${query}` : options.pathname);
   } catch (error) {
-    options.storage?.removeItem(storageKey);
     options.onError?.(error);
+  } finally {
+    inFlightRecoveryKeys.delete(storageKey);
   }
 }
 

@@ -488,6 +488,7 @@ describe("class actions", () => {
       expect(result.storagePath).toBe(`classes/class-1/${result.materialId}/lecture.pdf`);
       expect(result.uploadToken).toBe("test-token");
     }
+    expect(supabaseFromMock).not.toHaveBeenCalledWith("materials");
     expect(bucketMock.createSignedUploadUrl).toHaveBeenCalledTimes(1);
   });
 
@@ -529,6 +530,7 @@ describe("class actions", () => {
     });
 
     expect(result.ok).toBe(true);
+    expect(supabaseFromMock).not.toHaveBeenCalledWith("materials");
     expect(adminStorageMock.from).toHaveBeenCalledWith("materials");
     expect(adminBucketMock.createSignedUploadUrl).toHaveBeenCalledTimes(1);
   });

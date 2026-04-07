@@ -4,6 +4,17 @@ import {
   triggerPostLoginMaterialRecovery,
 } from "@/app/teacher/dashboard/PostLoginMaterialRecovery";
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+}
+
 describe("triggerPostLoginMaterialRecovery", () => {
   it("marks the token done only after a successful recovery request", async () => {
     const replace = vi.fn();
@@ -11,7 +22,6 @@ describe("triggerPostLoginMaterialRecovery", () => {
     const storage = {
       getItem: vi.fn().mockReturnValue(null),
       setItem: vi.fn(),
-      removeItem: vi.fn(),
     };
 
     await triggerPostLoginMaterialRecovery({
@@ -25,20 +35,18 @@ describe("triggerPostLoginMaterialRecovery", () => {
     });
 
     expect(storage.getItem).toHaveBeenCalledWith("post-login-material-recovery:token-1");
-    expect(storage.setItem).toHaveBeenNthCalledWith(1, "post-login-material-recovery:token-1", "pending");
-    expect(storage.setItem).toHaveBeenNthCalledWith(2, "post-login-material-recovery:token-1", "done");
-    expect(storage.removeItem).not.toHaveBeenCalled();
+    expect(storage.setItem).toHaveBeenCalledTimes(1);
+    expect(storage.setItem).toHaveBeenCalledWith("post-login-material-recovery:token-1", "done");
     expect(sendRecoveryRequest).toHaveBeenCalledTimes(1);
     expect(replace).toHaveBeenCalledWith("/teacher/dashboard?view=recent");
   });
 
-  it("does not fire a second recovery request for the same token", async () => {
+  it("does not fire a second recovery request for the same token after success", async () => {
     const replace = vi.fn();
     const sendRecoveryRequest = vi.fn().mockResolvedValue(undefined);
     const storage = {
       getItem: vi.fn().mockReturnValue("done"),
       setItem: vi.fn(),
-      removeItem: vi.fn(),
     };
 
     await triggerPostLoginMaterialRecovery({
@@ -54,14 +62,48 @@ describe("triggerPostLoginMaterialRecovery", () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
-  it("clears the pending token state and leaves the query param on failure so later renders can retry", async () => {
+  it("does not fire a duplicate recovery request while the first one is still in flight", async () => {
+    const replace = vi.fn();
+    const deferred = createDeferred<void>();
+    const sendRecoveryRequest = vi.fn().mockReturnValue(deferred.promise);
+    const storage = {
+      getItem: vi.fn().mockReturnValue(null),
+      setItem: vi.fn(),
+    };
+
+    const firstAttempt = triggerPostLoginMaterialRecovery({
+      pathname: "/teacher/dashboard",
+      searchParams: new URLSearchParams(`${POST_LOGIN_CLEANUP_PARAM}=token-2b`),
+      replace,
+      sendRecoveryRequest,
+      storage,
+    });
+
+    await Promise.resolve();
+
+    await triggerPostLoginMaterialRecovery({
+      pathname: "/teacher/dashboard",
+      searchParams: new URLSearchParams(`${POST_LOGIN_CLEANUP_PARAM}=token-2b`),
+      replace,
+      sendRecoveryRequest,
+      storage,
+    });
+
+    expect(sendRecoveryRequest).toHaveBeenCalledTimes(1);
+    expect(storage.setItem).not.toHaveBeenCalled();
+
+    deferred.resolve();
+    await firstAttempt;
+    expect(storage.setItem).toHaveBeenCalledWith("post-login-material-recovery:token-2b", "done");
+  });
+
+  it("leaves the token retryable on failure so later renders can try again", async () => {
     const replace = vi.fn();
     const sendRecoveryRequest = vi.fn().mockRejectedValue(new Error("temporary failure"));
     const onError = vi.fn();
     const storage = {
       getItem: vi.fn().mockReturnValue(null),
       setItem: vi.fn(),
-      removeItem: vi.fn(),
     };
 
     await triggerPostLoginMaterialRecovery({
@@ -73,8 +115,7 @@ describe("triggerPostLoginMaterialRecovery", () => {
       onError,
     });
 
-    expect(storage.setItem).toHaveBeenCalledWith("post-login-material-recovery:token-3", "pending");
-    expect(storage.removeItem).toHaveBeenCalledWith("post-login-material-recovery:token-3");
+    expect(storage.setItem).not.toHaveBeenCalled();
     expect(onError).toHaveBeenCalledTimes(1);
     expect(replace).not.toHaveBeenCalled();
   });

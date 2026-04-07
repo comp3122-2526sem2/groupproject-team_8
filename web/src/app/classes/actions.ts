@@ -535,19 +535,6 @@ async function rollbackUploadedMaterial(
   await storageClient.from(MATERIALS_BUCKET).remove([storagePath]);
 }
 
-async function deletePreparedMaterialRow(
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
-  materialId: string,
-  classId: string,
-) {
-  await supabase
-    .from("materials")
-    .delete()
-    .eq("id", materialId)
-    .eq("class_id", classId)
-    .eq("status", "pending");
-}
-
 async function markMaterialDispatchFailed(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
   materialId: string,
@@ -685,34 +672,12 @@ export async function prepareMaterialUpload(
       sandboxId: accessContext.sandboxId,
     },
   );
-  const baseMetadata = createBaseMaterialMetadata(validation.data);
-
-  const { error: insertError } = await accessContext.supabase.from("materials").insert({
-    id: materialId,
-    class_id: classId,
-    uploaded_by: accessContext.user.id,
-    title: getFallbackMaterialTitle(validation.data.filename),
-    storage_path: storagePath,
-    mime_type: validation.data.mimeType || null,
-    size_bytes: validation.data.sizeBytes,
-    status: "pending",
-    extracted_text: null,
-    metadata: baseMetadata,
-  });
-
-  if (insertError) {
-    return {
-      ok: false,
-      error: insertError.message,
-    };
-  }
 
   const { data, error } = await accessContext.storageClient
     .from(MATERIALS_BUCKET)
     .createSignedUploadUrl(storagePath);
 
   if (error || !data?.signedUrl || !data.token) {
-    await deletePreparedMaterialRow(accessContext.supabase, materialId, classId);
     return {
       ok: false,
       error: error?.message ?? "Failed to prepare a direct upload URL.",
@@ -778,7 +743,6 @@ async function finalizeMaterialUploadInternal(
     .info(input.storagePath);
 
   if (objectError || !objectInfo) {
-    await deletePreparedMaterialRow(accessContext.supabase, input.materialId, classId);
     return {
       ok: false,
       error: "Uploaded file was not found in storage. Please upload it again.",
@@ -791,7 +755,6 @@ async function finalizeMaterialUploadInternal(
       : validation.data.sizeBytes;
 
   if (!Number.isFinite(actualSize) || actualSize <= 0) {
-    await deletePreparedMaterialRow(accessContext.supabase, input.materialId, classId);
     return {
       ok: false,
       error: "Uploaded file is empty. Please upload it again.",
@@ -800,7 +763,6 @@ async function finalizeMaterialUploadInternal(
 
   if (actualSize > MAX_MATERIAL_BYTES) {
     await accessContext.storageClient.from(MATERIALS_BUCKET).remove([input.storagePath]);
-    await deletePreparedMaterialRow(accessContext.supabase, input.materialId, classId);
     return {
       ok: false,
       error: `File exceeds ${Math.round(MAX_MATERIAL_BYTES / (1024 * 1024))}MB limit`,
@@ -811,7 +773,6 @@ async function finalizeMaterialUploadInternal(
   const storedKind = detectMaterialKindFromNameAndType(validation.data.filename, storedMimeType);
   if (!storedKind) {
     await accessContext.storageClient.from(MATERIALS_BUCKET).remove([input.storagePath]);
-    await deletePreparedMaterialRow(accessContext.supabase, input.materialId, classId);
     return {
       ok: false,
       error: `Unsupported file type. Allowed: ${ALLOWED_EXTENSIONS.join(", ")}`,
@@ -825,9 +786,12 @@ async function finalizeMaterialUploadInternal(
     kind: storedKind,
   });
 
-  const { data: materialRow, error: updateError } = await accessContext.supabase
+  const { data: materialRow, error: insertError } = await accessContext.supabase
     .from("materials")
-    .update({
+    .insert({
+      id: input.materialId,
+      class_id: classId,
+      uploaded_by: accessContext.user.id,
       title:
         input.title?.trim() || getFallbackMaterialTitle(validation.data.filename),
       storage_path: input.storagePath,
@@ -837,16 +801,13 @@ async function finalizeMaterialUploadInternal(
       extracted_text: null,
       metadata: baseMetadata,
     })
-    .eq("id", input.materialId)
-    .eq("class_id", classId)
-    .eq("status", "pending")
     .select("id")
     .single();
 
-  if (updateError || !materialRow) {
+  if (insertError || !materialRow) {
     return {
       ok: false,
-      error: updateError?.message ?? "Upload session is invalid. Please upload the file again.",
+      error: insertError?.message ?? "Upload session is invalid. Please upload the file again.",
     };
   }
 
